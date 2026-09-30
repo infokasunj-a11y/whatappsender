@@ -1,0 +1,132 @@
+[
+  {
+    "id": "msg_1790762727264",
+    "officerId": "off_1790668108402",
+    "officerName": "Kasun Jayasooriya",
+    "phone": "+94706904904",
+    "message": "Dear Officer, please attend the urgent management meeting at 2:00 PM today.",
+    "attachment": null,
+    "timestamp": "2026-09-30T10:05:27.264Z",
+    "status": "SENT"
+  },
+  {
+    "id": "msg_1790669222276",
+    "officerId": "off_1790668108402",
+    "officerName": "Kasun Jayasooriya",
+    "phone": "+94706904904",
+    "message": "test",
+    "attachment": null,
+    "timestamp": "2026-09-29T08:07:02.276Z",
+    "status": "SENT"
+  },
+  {
+    "id": "msg_1790669210826",
+    "officerId": "off_1790668108402",
+    "officerName": "Kasun Jayasooriya",
+    "phone": "+94706904904",
+    "message": "Please forward the monthly report and updates as soon as possible.",
+    "attachment": null,
+    "timestamp": "2026-09-29T08:06:50.826Z",
+    "status": "SENT"
+  },
+  {
+    "id": "msg_1790669198435",
+    "officerId": "off_1790668108402",
+    "officerName": "Kasun Jayasooriya",
+    "phone": "+94706904904",
+    "message": "",
+    "attachment": "/uploads/upload-1790669196682-878652819.jpeg",
+    "timestamp": "2026-09-29T08:06:38.435Z",
+    "status": "SENT"
+  },
+  {
+    "id": "msg_1790669192060",
+    "officerId": "off_1790668108402",
+    "officerName": "Kasun Jayasooriya",
+    "phone": "+94706904904",
+    "message": "Urgent documents require your review and signature today.",
+    "attachment": null,
+    "timestamp": "2026-09-29T08:06:32.060Z",
+    "status": "SENT"
+  },
+  {
+    "id": "msg_1790669118845",
+    "officerId": "off_1790669051783",
+    "officerName": "Nuwan ",
+    "phone": "0783548973",
+    "message": "Urgent documents require your review and signature today.",
+    "attachment": null,
+    "timestamp": "2026-09-29T08:05:18.845Z",
+    "status": "SENT"
+  },
+  {
+    "id": "msg_1790669064669",
+    "officerId": "off_1790669051783",
+    "officerName": "Nuwan ",
+    "phone": "0783548973",
+    "message": "Urgent documents require your review and signature today.",
+    "attachment": "/uploads/upload-1790669061721-446998427.jpeg",
+    "timestamp": "2026-09-29T08:04:24.669Z",
+    "status": "SENT"
+  },
+  {
+    "id": "msg_1790668876882",
+    "officerId": "off_1790668108402",
+    "officerName": "Kasun Jayasooriya",
+    "phone": "+94706904904",
+    "message": "Dear Officer, please attend the urgent management meeting at 2:00 PM today.",
+    "attachment": "/uploads/upload-1790668873616-512627584.jpeg",
+    "timestamp": "2026-09-29T08:01:16.882Z",
+    "status": "SENT"
+  },
+  {
+    "id": "msg_1790668605608",
+    "officerId": "off_1790668108402",
+    "officerName": "Kasun Jayasooriya",
+    "phone": "+94706904904",
+    "message": "Please forward the monthly report and updates as soon as possible.",
+    "attachment": null,
+    "timestamp": "2026-09-29T07:56:45.608Z",
+    "status": "SENT"
+  },
+  {
+    "id": "msg_1790668598960",
+    "officerId": "off_1790668108402",
+    "officerName": "Kasun Jayasooriya",
+    "phone": "+94706904904",
+    "message": "dfdff",
+    "attachment": null,
+    "timestamp": "2026-09-29T07:56:38.960Z",
+    "status": "SENT"
+  },
+  {
+    "id": "msg_1790668294799",
+    "officerId": "off_1790668108402",
+    "officerName": "Kasun Jayasooriya",
+    "phone": "+94706904904",
+    "message": "Dear Officer, please attend the urgent management meeting at 2:00 PM today.",
+    "attachment": null,
+    "timestamp": "2026-09-29T07:51:34.799Z",
+    "status": "SENT"
+  },
+  {
+    "id": "msg_1790668202614",
+    "officerId": "off_1790668108402",
+    "officerName": "Kasun Jayasooriya",
+    "phone": "+94706904904",
+    "message": "Urgent documents require your review and signature today.",
+    "attachment": null,
+    "timestamp": "2026-09-29T07:50:02.614Z",
+    "status": "SENT"
+  },
+  {
+    "id": "msg_1790668161765",
+    "officerId": "off_1790668108402",
+    "officerName": "Kasun Jayasooriya",
+    "phone": "+94703800051",
+    "message": "Urgent documents require your review and signature today.",
+    "attachment": null,
+    "timestamp": "2026-09-29T07:49:21.765Z",
+    "status": "SENT"
+  }
+]

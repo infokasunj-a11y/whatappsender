@@ -1,0 +1,32 @@
+[
+  {
+    "id": "off_1",
+    "name": "Kamal Perera",
+    "designation": "Assistant Director",
+    "department": "Administration",
+    "phone": "0771234567",
+    "photo": "/uploads/default_avatar.png",
+    "notes": "Head of HR and Admin"
+  },
+  {
+    "id": "off_1790668108402",
+    "name": "Kasun Jayasooriya",
+    "designation": "ITA",
+    "department": "Admin",
+    "phone": "+94706904904",
+    "photo": "/uploads/default_avatar.svg",
+    "notes": "",
+    "createdAt": "2026-09-29T07:48:28.402Z",
+    "updatedAt": "2026-09-29T07:49:57.530Z"
+  },
+  {
+    "id": "off_1790669051783",
+    "name": "Nuwan ",
+    "designation": "DO",
+    "department": "Admin",
+    "phone": "0783548973",
+    "photo": "/uploads/default_avatar.svg",
+    "notes": "",
+    "createdAt": "2026-09-29T08:04:11.783Z"
+  }
+]

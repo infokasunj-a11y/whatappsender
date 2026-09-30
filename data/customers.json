@@ -1,0 +1,22 @@
+[
+  {
+    "id": "cust_1",
+    "fileNo": "DSB/LAND/2026/089",
+    "name": "K. M. Bandara",
+    "idNo": "198512345678",
+    "address": "No. 45, Main Street, Bandarawela",
+    "phone": "0771234567",
+    "notes": "Land Permit Application (ඉඩම් බලපත්‍රය) - Approved & Ready for collection",
+    "createdAt": "2026-09-30T08:00:00.000Z"
+  },
+  {
+    "id": "cust_2",
+    "fileNo": "DSB/LAND/2026/142",
+    "name": "W. M. Sunethra",
+    "idNo": "199265432109",
+    "address": "Kinigama, Bandarawela",
+    "phone": "0719876543",
+    "notes": "Land Grant (දීමනාපත්‍රය) - Boundary Survey Pending",
+    "createdAt": "2026-09-30T08:15:00.000Z"
+  }
+]
