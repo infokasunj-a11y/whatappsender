@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bandarawela Divisional Secretariat | Office WhatsApp Dispatcher</title>
+  <link rel="stylesheet" href="style.css?v=2.8">
+  <!-- FontAwesome & Google Fonts -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="navbar">
+      <div class="brand">
+        <img src="/logo.jpg" alt="Bandarawela Divisional Secretariat Logo" class="brand-logo">
+        <div>
+          <h1>Bandarawela Divisional Secretariat</h1>
+          <span class="subtitle">Office WhatsApp Dispatcher</span>
+        </div>
+      </div>
+      
+      <!-- WhatsApp Live Status Widget & User Badge -->
+      <div class="header-right-group">
+        <div class="user-badge" id="userBadge" style="display: none;">
+          <i class="fa-solid fa-user-shield"></i> <span id="userName">Section Head</span>
+          <button class="btn btn-sm btn-icon" id="openChangePassBtn" title="Change Password"><i class="fa-solid fa-key"></i></button>
+          <button class="btn btn-sm btn-danger" id="userLogoutBtn" title="Logout / Switch Account" style="margin-left: 6px;">
+            <i class="fa-solid fa-right-from-bracket"></i> Logout
+          </button>
+        </div>
+
+        <div class="whatsapp-status-card" id="statusCard">
+          <span class="status-indicator-dot" id="statusDot"></span>
+          <div class="status-info">
+            <div class="status-title" id="statusTitle">Connecting WhatsApp...</div>
+            <div class="status-subtitle" id="statusSub">Please wait...</div>
+          </div>
+          <button class="btn btn-sm btn-outline-danger" id="logoutBtn" style="display: none;">
+            <i class="fa-solid fa-power-off"></i> Disconnect WA
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- QR Code Banner / Alert (If Disconnected or Waiting for QR) -->
+    <div class="qr-banner" id="qrBanner" style="display: none;">
+      <div class="qr-content">
+        <div class="qr-text">
+          <h3><i class="fa-solid fa-qrcode"></i> Link Common Office WhatsApp Number</h3>
+          <p>Open WhatsApp on the office phone &gt; Settings / Menu &gt; <b>Linked Devices</b> &gt; <b>Link a Device</b>, then scan this QR code.</p>
+        </div>
+        <div class="qr-img-wrapper">
+          <img id="qrCodeImg" src="" alt="WhatsApp QR Code">
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      
+      <!-- Left Column: Directory Switcher & Search -->
+      <section class="panel officers-panel">
+        <div class="directory-tabs">
+          <button class="tab-btn active" id="tabOfficersBtn">
+            <i class="fa-solid fa-user-tie"></i> Officers
+          </button>
+          <button class="tab-btn" id="tabCustomersBtn">
+            <i class="fa-solid fa-folder-open"></i> Customer Files
+          </button>
+        </div>
+
+        <div class="panel-header">
+          <h2 id="dirPanelTitle"><i class="fa-solid fa-address-book"></i> Officers Directory</h2>
+          <button class="btn btn-primary" id="openAddModalBtn">
+            <i class="fa-solid fa-user-plus"></i> Add Officer
+          </button>
+        </div>
+
+        <!-- Search Bar -->
+        <div class="search-box">
+          <i class="fa-solid fa-magnifying-glass search-icon"></i>
+          <input type="text" id="searchInput" placeholder="Search by name, designation or department...">
+        </div>
+
+        <!-- Directory List Container -->
+        <div class="officers-list" id="officersList">
+          <div class="loading-state">
+            <i class="fa-solid fa-spinner fa-spin"></i> Loading directory...
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Column: Message Composer & Log -->
+      <section class="panel composer-panel">
+        
+        <!-- Active Selected Officer Header -->
+        <div class="selected-officer-banner" id="selectedOfficerBanner">
+          <div class="banner-avatar">
+            <img id="selAvatar" src="/uploads/default_avatar.svg" alt="Officer Avatar">
+          </div>
+          <div class="banner-details">
+            <h3 id="selName">Select an Officer</h3>
+            <p id="selDesignation">Click on any officer on the left to start messaging</p>
+            <span class="badge" id="selPhone">No phone selected</span>
+          </div>
+        </div>
+
+        <!-- Message Form -->
+        <form id="messageForm" class="message-form">
+          <input type="hidden" id="selectedOfficerId">
+          <input type="hidden" id="selectedPhone">
+
+          <!-- Quick Templates -->
+          <div class="form-group">
+            <label class="form-label"><i class="fa-solid fa-wand-magic-sparkles"></i> Quick Message Templates</label>
+            <div class="template-pills">
+              <button type="button" class="pill" data-template="Dear Sir/Madam, your Land Permit Application (ඉඩම් බලපත්‍රය) has been approved. Please visit Bandarawela Divisional Secretariat to collect your document.">🏞️ Land Permit Approved</button>
+              <button type="button" class="pill" data-template="Notice regarding Land File: Land Boundary Survey inspection is scheduled. Please be present at the land location on the given date.">📐 Land Survey Notice</button>
+              <button type="button" class="pill" data-template="Urgent Notice: Please submit your NIC copy, Grama Niladhari report and supporting documents to the Land Section (ඉඩම් අංශය).">📝 Submit Land Docs</button>
+              <button type="button" class="pill" data-template="Dear Officer, please attend the urgent management meeting at 2:00 PM today.">📅 Meeting Reminder</button>
+            </div>
+          </div>
+
+          <!-- Message Text -->
+          <div class="form-group">
+            <label for="messageText" class="form-label">Message Content</label>
+            <textarea id="messageText" rows="4" placeholder="Type your official message here..."></textarea>
+          </div>
+
+          <!-- Image / Attachment Upload -->
+          <div class="form-group">
+            <label for="imageUpload" class="form-label">
+              <i class="fa-solid fa-image"></i> Attach Photo / Document Image (Optional)
+            </label>
+            <div class="file-upload-box" id="fileDropZone">
+              <input type="file" id="imageUpload" accept="image/*">
+              <div class="upload-placeholder" id="uploadPlaceholder">
+                <i class="fa-solid fa-cloud-arrow-up"></i>
+                <span>Click or drag image here to attach</span>
+              </div>
+              <div class="upload-preview" id="uploadPreview" style="display: none;">
+                <img id="previewImg" src="" alt="Attachment Preview">
+                <button type="button" class="btn-remove-file" id="removeFileBtn"><i class="fa-solid fa-xmark"></i></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="form-actions">
+            <button type="submit" class="btn btn-success btn-lg" id="sendBtn" disabled>
+              <i class="fa-brands fa-whatsapp"></i> Send via Office WhatsApp
+            </button>
+          </div>
+        </form>
+
+        <!-- Sent Message Log / History -->
+        <div class="history-section">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h3 style="margin: 0;"><i class="fa-solid fa-clock-rotate-left"></i> Recent Sent History</h3>
+            <button class="btn btn-sm btn-outline-danger" id="clearHistoryBtn" style="display: none;" title="Admin Only: Clear History">
+              <i class="fa-solid fa-trash-can"></i> Clear History
+            </button>
+          </div>
+          <div class="history-list" id="historyList">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+  </div>
+
+  <!-- Add / Edit Officer Modal -->
+  <div class="modal" id="officerModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modalTitle"><i class="fa-solid fa-user-plus"></i> Add New Officer</h3>
+        <button class="modal-close" id="closeModalBtn">&times;</button>
+      </div>
+      <form id="officerForm">
+        <input type="hidden" id="officerIdInput">
+        <div class="form-group">
+          <label for="offName">Officer Name *</label>
+          <input type="text" id="offName" required placeholder="e.g. Mr. A. B. Perera">
+        </div>
+        <div class="form-group">
+          <label for="offDesignation">Designation</label>
+          <input type="text" id="offDesignation" placeholder="e.g. Senior Executive Officer">
+        </div>
+        <div class="form-group">
+          <label for="offDepartment">Department</label>
+          <input type="text" id="offDepartment" placeholder="e.g. Administration / HR">
+        </div>
+        <div class="form-group">
+          <label for="offPhone">WhatsApp Phone Number *</label>
+          <input type="text" id="offPhone" required placeholder="e.g. 0771234567 or +94771234567">
+        </div>
+        <div class="form-group">
+          <label for="offPhoto">Officer Photo</label>
+          <input type="file" id="offPhoto" accept="image/*">
+        </div>
+        <div class="form-group">
+          <label for="offNotes">Notes / Special Instructions</label>
+          <textarea id="offNotes" rows="2" placeholder="Optional notes..."></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="cancelModalBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="saveOfficerBtn">Save Officer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add / Edit Customer File Modal -->
+  <div class="modal" id="customerModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="custModalTitle"><i class="fa-solid fa-folder-plus"></i> Add New Customer File</h3>
+        <button class="modal-close" id="closeCustModalBtn">&times;</button>
+      </div>
+      <form id="customerForm">
+        <input type="hidden" id="customerIdInput">
+        <div class="form-group">
+          <label for="custFileNo">File Number (ෆයිල් අංකය) *</label>
+          <input type="text" id="custFileNo" required placeholder="e.g. DSB/ADM/2026/045">
+        </div>
+        <div class="form-group">
+          <label for="custName">Customer Name (නම) *</label>
+          <input type="text" id="custName" required placeholder="e.g. Mr. K. M. Bandara">
+        </div>
+        <div class="form-group">
+          <label for="custIdNo">NIC / ID Number (ජා.හැ. අංකය)</label>
+          <input type="text" id="custIdNo" placeholder="e.g. 198512345678">
+        </div>
+        <div class="form-group">
+          <label for="custAddress">Address (ලිපිනය)</label>
+          <input type="text" id="custAddress" placeholder="e.g. No. 12, Main Street, Bandarawela">
+        </div>
+        <div class="form-group">
+          <label for="custPhone">WhatsApp Phone Number (දුරකථන අංකය) *</label>
+          <input type="text" id="custPhone" required placeholder="e.g. 0771234567 or +94771234567">
+        </div>
+        <div class="form-group">
+          <label for="custNotes">Notes / File Status (විස්තර/තත්ත්වය)</label>
+          <textarea id="custNotes" rows="2" placeholder="e.g. Approved - Ready for collection..."></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="cancelCustModalBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="saveCustBtn">Save Customer File</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Section Head Security Login Modal Overlay -->
+  <div class="login-overlay active" id="loginOverlay">
+    <div class="login-card">
+      <div class="login-header">
+        <img src="/logo.jpg" alt="Logo" class="login-logo">
+        <h2>Divisional Secretariat Bandarawela</h2>
+        <p>Section Head Portal Security Access</p>
+      </div>
+      <form id="loginForm" action="javascript:void(0);" onsubmit="return false;">
+        <div class="form-group">
+          <label for="loginUsername"><i class="fa-solid fa-user"></i> Username</label>
+          <input type="text" id="loginUsername" required placeholder="e.g. admin or landsection">
+        </div>
+        <div class="form-group">
+          <label for="loginPassword"><i class="fa-solid fa-lock"></i> Password</label>
+          <input type="password" id="loginPassword" required placeholder="Enter password...">
+        </div>
+        <button type="button" class="btn btn-primary btn-lg" id="loginSubmitBtn">
+          <i class="fa-solid fa-shield-halved"></i> Access Dispatcher
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Change Password Modal -->
+  <div class="modal" id="changePasswordModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-key"></i> Change Section Head Password</h3>
+        <button class="modal-close" id="closePassModalBtn">&times;</button>
+      </div>
+      <form id="changePasswordForm">
+        <div class="form-group">
+          <label for="oldPass">Current Password</label>
+          <input type="password" id="oldPass" required placeholder="Enter current password...">
+        </div>
+        <div class="form-group">
+          <label for="newPass">New Password</label>
+          <input type="password" id="newPass" required placeholder="Enter new password (min 4 chars)...">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" id="cancelPassModalBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Update Password</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="toast"></div>
+
+  <script src="app.js?v=2.8"></script>
+</body>
+</html>

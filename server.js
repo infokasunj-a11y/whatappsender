@@ -519,6 +519,26 @@ app.get('/api/history', (req, res) => {
   res.json(history);
 });
 
+// Clear All Message History (Admin Only)
+app.delete('/api/history', requireAuth, (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Access denied. Only Admin (Divisional Secretary) can clear message history.' });
+  }
+  writeJSON(HISTORY_FILE, []);
+  res.json({ success: true, message: 'Message history cleared successfully!' });
+});
+
+// Delete Single Message History Item (Admin Only)
+app.delete('/api/history/:id', requireAuth, (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Access denied. Only Admin can delete history items.' });
+  }
+  let history = readJSON(HISTORY_FILE, []);
+  history = history.filter(h => h.id !== req.params.id);
+  writeJSON(HISTORY_FILE, history);
+  res.json({ success: true, message: 'History record deleted.' });
+});
+
 // Start Express Server
 app.listen(PORT, () => {
   console.log(`===================================================`);
