@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Bandarawela Divisional Secretariat | Office WhatsApp Dispatcher</title>
-  <link rel="stylesheet" href="style.css?v=2.8">
+  <link rel="stylesheet" href="style.css?v=3.0">
   <!-- FontAwesome & Google Fonts -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -82,6 +82,17 @@
         <div class="search-box">
           <i class="fa-solid fa-magnifying-glass search-icon"></i>
           <input type="text" id="searchInput" placeholder="Search by name, designation or department...">
+        </div>
+
+        <!-- Bulk Selection Control Bar -->
+        <div class="bulk-select-bar" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 12px; font-size: 0.88rem;">
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-weight: 500; margin: 0; color: #1e293b;">
+            <input type="checkbox" id="selectAllCheckbox" style="width: 18px; height: 18px; cursor: pointer; accent-color: #059669;">
+            <span>Select All (සියල්ල තෝරන්න)</span>
+          </label>
+          <span class="badge" id="selectedCountBadge" style="display: none; background: #2563eb; color: #ffffff; padding: 4px 10px; border-radius: 12px; font-weight: 600;">
+            0 Selected
+          </span>
         </div>
 
         <!-- Directory List Container -->
@@ -306,6 +317,6 @@
   <!-- Toast Notification -->
   <div class="toast" id="toast"></div>
 
-  <script src="app.js?v=2.8"></script>
+  <script src="app.js?v=3.0"></script>
 </body>
 </html>

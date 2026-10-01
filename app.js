@@ -62,11 +62,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const toast = document.getElementById('toast');
   const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+  const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+  const selectedCountBadge = document.getElementById('selectedCountBadge');
 
   let activeTab = 'officers'; // 'officers' or 'customers'
-  let activeRecipient = null; // selected officer or customer object
+  let activeRecipient = null; // selected officer, customer object or bulk object
   let isWhatsAppReady = false;
   let authToken = localStorage.getItem('ds_auth_token') || null;
+  let selectedMap = new Map(); // stores selected id -> item object
+  let currentDirectoryItems = []; // currently rendered items in active tab
 
   // --- Helper: Authenticated Fetch ---
   async function authFetch(url, options = {}) {
@@ -184,23 +188,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function switchToOfficerTab() {
     activeTab = 'officers';
+    selectedMap.clear();
     tabOfficersBtn.classList.add('active');
     tabCustomersBtn.classList.remove('active');
     dirPanelTitle.innerHTML = `<i class="fa-solid fa-address-book"></i> Officers Directory`;
     openAddModalBtn.innerHTML = `<i class="fa-solid fa-user-plus"></i> Add Officer`;
     searchInput.placeholder = `Search officer by name, designation or department...`;
-    resetSelectedRecipient();
+    updateSelectionUI();
     loadDirectory();
   }
 
   function switchToCustomerTab() {
     activeTab = 'customers';
+    selectedMap.clear();
     tabCustomersBtn.classList.add('active');
     tabOfficersBtn.classList.remove('active');
     dirPanelTitle.innerHTML = `<i class="fa-solid fa-folder-open"></i> Land Customer Files (ඉඩම් ලේඛනය)`;
     openAddModalBtn.innerHTML = `<i class="fa-solid fa-folder-plus"></i> Add Customer File`;
     searchInput.placeholder = `Search by Customer Name, File No, NIC No or Address...`;
-    resetSelectedRecipient();
+    updateSelectionUI();
     loadDirectory();
   }
 
@@ -302,6 +308,123 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // --- 2. Directory Loader (Officers or Customers) ---
+  function syncCardCheckboxes() {
+    document.querySelectorAll('.card-select-checkbox').forEach(chk => {
+      const id = chk.getAttribute('data-id');
+      chk.checked = selectedMap.has(id);
+    });
+    document.querySelectorAll('.officer-card').forEach(card => {
+      const id = card.getAttribute('data-id');
+      card.classList.toggle('active', selectedMap.has(id));
+    });
+  }
+
+  function updateSelectionUI() {
+    const count = selectedMap.size;
+
+    if (count === 0) {
+      if (selectedCountBadge) selectedCountBadge.style.display = 'none';
+      if (selectAllCheckbox) {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = false;
+      }
+      resetSelectedRecipient();
+    } else if (count === 1) {
+      if (selectedCountBadge) {
+        selectedCountBadge.style.display = 'inline-block';
+        selectedCountBadge.textContent = '1 Selected';
+      }
+      const singleItem = Array.from(selectedMap.values())[0];
+      displaySingleRecipientUI(singleItem);
+    } else {
+      if (selectedCountBadge) {
+        selectedCountBadge.style.display = 'inline-block';
+        selectedCountBadge.textContent = `${count} Selected`;
+      }
+      displayBulkRecipientUI(count);
+    }
+
+    if (selectAllCheckbox && currentDirectoryItems.length > 0) {
+      const allSelected = currentDirectoryItems.every(item => selectedMap.has(item.id));
+      const someSelected = currentDirectoryItems.some(item => selectedMap.has(item.id));
+      selectAllCheckbox.checked = allSelected;
+      selectAllCheckbox.indeterminate = !allSelected && someSelected;
+    }
+
+    syncCardCheckboxes();
+  }
+
+  function displaySingleRecipientUI(item) {
+    activeRecipient = item;
+    selectedOfficerId.value = item.id;
+    selectedPhone.value = item.phone;
+
+    if (activeTab === 'officers') {
+      selAvatar.src = item.photo || '/uploads/default_avatar.svg';
+      selName.textContent = item.name;
+      selDesignation.textContent = `${item.designation || 'Officer'} • ${item.department || 'Office'}`;
+      selPhone.textContent = `WhatsApp: ${item.phone}`;
+    } else {
+      selAvatar.src = '/uploads/default_avatar.svg';
+      selName.textContent = item.name;
+      selDesignation.textContent = `File No: ${item.fileNo} • NIC: ${item.idNo || 'N/A'}`;
+      selPhone.textContent = `WhatsApp: ${item.phone}`;
+      
+      if (!messageText.value.trim()) {
+        messageText.value = `Dear ${item.name}, regarding your File No: ${item.fileNo} at Bandarawela Divisional Secretariat: `;
+      }
+    }
+    updateSendButtonState();
+  }
+
+  function displayBulkRecipientUI(count) {
+    activeRecipient = { isBulk: true, count };
+    selectedOfficerId.value = '';
+    selectedPhone.value = '';
+    selAvatar.src = '/uploads/default_avatar.svg';
+    selName.textContent = `${count} Recipients Selected (තෝරාගත් ${count} දෙනෙකුට)`;
+    selDesignation.textContent = `Bulk Message Mode • ${activeTab === 'officers' ? 'Officers Directory' : 'Land Customer Files'}`;
+    selPhone.textContent = `Selected: ${count} Numbers`;
+    updateSendButtonState();
+  }
+
+  function resetSelectedRecipient() {
+    activeRecipient = null;
+    selectedOfficerId.value = '';
+    selectedPhone.value = '';
+    selAvatar.src = '/uploads/default_avatar.svg';
+    selName.textContent = 'Select a Recipient';
+    selDesignation.textContent = 'Click on an officer or customer file to start messaging';
+    selPhone.textContent = 'No phone selected';
+    updateSendButtonState();
+  }
+
+  function updateSendButtonState() {
+    const count = selectedMap.size;
+    if (isWhatsAppReady && count > 0 && authToken) {
+      sendBtn.removeAttribute('disabled');
+      if (count > 1) {
+        sendBtn.innerHTML = `<i class="fa-brands fa-whatsapp"></i> Send Bulk Message (${count} Recipients)`;
+      } else {
+        sendBtn.innerHTML = `<i class="fa-brands fa-whatsapp"></i> Send via Office WhatsApp`;
+      }
+    } else {
+      sendBtn.setAttribute('disabled', 'true');
+      sendBtn.innerHTML = `<i class="fa-brands fa-whatsapp"></i> Send via Office WhatsApp`;
+    }
+  }
+
+  if (selectAllCheckbox) {
+    selectAllCheckbox.addEventListener('change', () => {
+      if (selectAllCheckbox.checked) {
+        currentDirectoryItems.forEach(item => selectedMap.set(item.id, item));
+      } else {
+        currentDirectoryItems.forEach(item => selectedMap.delete(item.id));
+      }
+      updateSelectionUI();
+    });
+  }
+
   function loadDirectory(query = searchInput.value) {
     if (activeTab === 'officers') {
       loadOfficers(query);
@@ -316,17 +439,20 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await authFetch(`/api/officers?q=${encodeURIComponent(query)}`);
       if (!res.ok) return;
       const officers = await res.json();
+      currentDirectoryItems = officers;
 
       if (officers.length === 0) {
         officersList.innerHTML = `<div class="empty-state" style="padding: 20px; text-align: center; color: var(--text-muted);">
           No officers found. Click "Add Officer" to create one.
         </div>`;
+        updateSelectionUI();
         return;
       }
 
       officersList.innerHTML = officers.map(off => `
-        <div class="officer-card ${activeRecipient && activeRecipient.id === off.id ? 'active' : ''}" data-id="${off.id}">
+        <div class="officer-card ${selectedMap.has(off.id) ? 'active' : ''}" data-id="${off.id}">
           <div class="officer-info-group">
+            <input type="checkbox" class="card-select-checkbox" data-id="${off.id}" ${selectedMap.has(off.id) ? 'checked' : ''} style="width: 18px; height: 18px; cursor: pointer; accent-color: #059669;">
             <img src="${off.photo}" class="officer-avatar" alt="${off.name}">
             <div>
               <div class="officer-name">${off.name}</div>
@@ -345,12 +471,29 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       `).join('');
 
+      document.querySelectorAll('.card-select-checkbox').forEach(chk => {
+        chk.addEventListener('change', (e) => {
+          e.stopPropagation();
+          const offId = chk.getAttribute('data-id');
+          const item = officers.find(o => o.id === offId);
+          if (item) {
+            if (chk.checked) selectedMap.set(offId, item);
+            else selectedMap.delete(offId);
+            updateSelectionUI();
+          }
+        });
+      });
+
       document.querySelectorAll('.officer-card').forEach(card => {
         card.addEventListener('click', (e) => {
-          if (e.target.closest('.edit-off-btn') || e.target.closest('.delete-off-btn')) return;
+          if (e.target.closest('.edit-off-btn') || e.target.closest('.delete-off-btn') || e.target.closest('.card-select-checkbox')) return;
           const offId = card.getAttribute('data-id');
           const selected = officers.find(o => o.id === offId);
-          selectRecipient(selected, 'officer');
+          if (!selected) return;
+
+          selectedMap.clear();
+          selectedMap.set(offId, selected);
+          updateSelectionUI();
         });
       });
 
@@ -370,13 +513,14 @@ document.addEventListener('DOMContentLoaded', () => {
           if (confirm('Are you sure you want to delete this officer?')) {
             await authFetch(`/api/officers/${offId}`, { method: 'DELETE' });
             showToast('Officer deleted successfully.', 'success');
+            selectedMap.delete(offId);
+            updateSelectionUI();
             loadOfficers(searchInput.value);
-            if (activeRecipient && activeRecipient.id === offId) {
-              resetSelectedRecipient();
-            }
           }
         });
       });
+
+      updateSelectionUI();
 
     } catch (err) {
       console.error('Error loading officers:', err);
@@ -389,17 +533,20 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await authFetch(`/api/customers?q=${encodeURIComponent(query)}`);
       if (!res.ok) return;
       const customers = await res.json();
+      currentDirectoryItems = customers;
 
       if (customers.length === 0) {
         officersList.innerHTML = `<div class="empty-state" style="padding: 20px; text-align: center; color: var(--text-muted);">
           No customer files found. Click "Add Customer File" to create one.
         </div>`;
+        updateSelectionUI();
         return;
       }
 
       officersList.innerHTML = customers.map(cust => `
-        <div class="officer-card ${activeRecipient && activeRecipient.id === cust.id ? 'active' : ''}" data-id="${cust.id}">
+        <div class="officer-card ${selectedMap.has(cust.id) ? 'active' : ''}" data-id="${cust.id}">
           <div class="officer-info-group">
+            <input type="checkbox" class="card-select-checkbox" data-id="${cust.id}" ${selectedMap.has(cust.id) ? 'checked' : ''} style="width: 18px; height: 18px; cursor: pointer; accent-color: #059669;">
             <div class="officer-avatar" style="display: flex; align-items: center; justify-content: center; background: #e0e7ff; color: #3730a3; font-size: 1.2rem; font-weight: bold;">
               <i class="fa-solid fa-folder"></i>
             </div>
@@ -421,12 +568,29 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       `).join('');
 
+      document.querySelectorAll('.card-select-checkbox').forEach(chk => {
+        chk.addEventListener('change', (e) => {
+          e.stopPropagation();
+          const custId = chk.getAttribute('data-id');
+          const item = customers.find(c => c.id === custId);
+          if (item) {
+            if (chk.checked) selectedMap.set(custId, item);
+            else selectedMap.delete(custId);
+            updateSelectionUI();
+          }
+        });
+      });
+
       document.querySelectorAll('.officer-card').forEach(card => {
         card.addEventListener('click', (e) => {
-          if (e.target.closest('.edit-cust-btn') || e.target.closest('.delete-cust-btn')) return;
+          if (e.target.closest('.edit-cust-btn') || e.target.closest('.delete-cust-btn') || e.target.closest('.card-select-checkbox')) return;
           const custId = card.getAttribute('data-id');
           const selected = customers.find(c => c.id === custId);
-          selectRecipient(selected, 'customer');
+          if (!selected) return;
+
+          selectedMap.clear();
+          selectedMap.set(custId, selected);
+          updateSelectionUI();
         });
       });
 
@@ -446,13 +610,14 @@ document.addEventListener('DOMContentLoaded', () => {
           if (confirm('Are you sure you want to delete this customer record?')) {
             await authFetch(`/api/customers/${custId}`, { method: 'DELETE' });
             showToast('Customer record deleted.', 'success');
+            selectedMap.delete(custId);
+            updateSelectionUI();
             loadCustomers(searchInput.value);
-            if (activeRecipient && activeRecipient.id === custId) {
-              resetSelectedRecipient();
-            }
           }
         });
       });
+
+      updateSelectionUI();
 
     } catch (err) {
       console.error('Error loading customers:', err);
@@ -466,54 +631,6 @@ document.addEventListener('DOMContentLoaded', () => {
       loadDirectory(e.target.value);
     }, 300);
   });
-
-  function selectRecipient(item, type) {
-    activeRecipient = item;
-    selectedOfficerId.value = item.id;
-    selectedPhone.value = item.phone;
-
-    if (type === 'officer') {
-      selAvatar.src = item.photo || '/uploads/default_avatar.svg';
-      selName.textContent = item.name;
-      selDesignation.textContent = `${item.designation || 'Officer'} • ${item.department || 'Office'}`;
-      selPhone.textContent = `WhatsApp: ${item.phone}`;
-    } else {
-      selAvatar.src = '/uploads/default_avatar.svg';
-      selName.textContent = item.name;
-      selDesignation.textContent = `File No: ${item.fileNo} • NIC: ${item.idNo || 'N/A'}`;
-      selPhone.textContent = `WhatsApp: ${item.phone}`;
-      
-      // Auto pre-fill message text if empty
-      if (!messageText.value.trim()) {
-        messageText.value = `Dear ${item.name}, regarding your File No: ${item.fileNo} at Bandarawela Divisional Secretariat: `;
-      }
-    }
-
-    document.querySelectorAll('.officer-card').forEach(c => {
-      c.classList.toggle('active', c.getAttribute('data-id') === item.id);
-    });
-
-    updateSendButtonState();
-  }
-
-  function resetSelectedRecipient() {
-    activeRecipient = null;
-    selectedOfficerId.value = '';
-    selectedPhone.value = '';
-    selAvatar.src = '/uploads/default_avatar.svg';
-    selName.textContent = 'Select a Recipient';
-    selDesignation.textContent = 'Click on an officer or customer file to start messaging';
-    selPhone.textContent = 'No phone selected';
-    updateSendButtonState();
-  }
-
-  function updateSendButtonState() {
-    if (isWhatsAppReady && activeRecipient && authToken) {
-      sendBtn.removeAttribute('disabled');
-    } else {
-      sendBtn.setAttribute('disabled', 'true');
-    }
-  }
 
   // --- 3. Quick Message Templates ---
   document.querySelectorAll('.pill').forEach(pill => {
@@ -554,8 +671,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    if (!activeRecipient) {
-      showToast('Please select a recipient (officer or customer) first.', 'error');
+    if (selectedMap.size === 0) {
+      showToast('Please select at least one recipient (officer or customer) first.', 'error');
       return;
     }
 
@@ -567,29 +684,55 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const formData = new FormData();
-    formData.append('officerId', activeRecipient.id);
-    formData.append('phone', activeRecipient.phone);
-    formData.append('message', text);
-    if (file) {
-      formData.append('attachment', file);
-    }
+    const count = selectedMap.size;
+    const isBulk = count > 1;
 
     sendBtn.setAttribute('disabled', 'true');
-    sendBtn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Sending via WhatsApp...`;
+    sendBtn.innerHTML = isBulk
+      ? `<i class="fa-solid fa-circle-notch fa-spin"></i> Dispatched bulk messages...`
+      : `<i class="fa-solid fa-circle-notch fa-spin"></i> Sending via WhatsApp...`;
 
     try {
-      const res = await authFetch('/api/send', {
-        method: 'POST',
-        body: formData
-      });
+      let res, data;
+      if (isBulk) {
+        const recipientsArray = Array.from(selectedMap.values()).map(r => ({
+          id: r.id,
+          name: r.name,
+          phone: r.phone,
+          fileNo: r.fileNo || ''
+        }));
 
-      const data = await res.json();
+        const formData = new FormData();
+        formData.append('recipients', JSON.stringify(recipientsArray));
+        formData.append('message', text);
+        if (file) formData.append('attachment', file);
+
+        res = await authFetch('/api/send-bulk', {
+          method: 'POST',
+          body: formData
+        });
+        data = await res.json();
+      } else {
+        const singleRecipient = Array.from(selectedMap.values())[0];
+        const formData = new FormData();
+        formData.append('officerId', singleRecipient.id);
+        formData.append('phone', singleRecipient.phone);
+        formData.append('message', text);
+        if (file) formData.append('attachment', file);
+
+        res = await authFetch('/api/send', {
+          method: 'POST',
+          body: formData
+        });
+        data = await res.json();
+      }
 
       if (res.ok && data.success) {
-        showToast(`Message sent successfully to ${activeRecipient.name}!`, 'success');
+        showToast(data.message || `Message sent successfully!`, 'success');
         messageText.value = '';
         removeFileBtn.click();
+        selectedMap.clear();
+        updateSelectionUI();
         loadHistory();
       } else {
         showToast(data.error || 'Failed to send WhatsApp message.', 'error');
@@ -598,7 +741,6 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Send error:', err);
       showToast('Network error sending message.', 'error');
     } finally {
-      sendBtn.innerHTML = `<i class="fa-brands fa-whatsapp"></i> Send via Office WhatsApp`;
       updateSendButtonState();
     }
   });

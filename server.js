@@ -518,6 +518,107 @@ app.post('/api/send', requireAuth, upload.single('attachment'), async (req, res)
   }
 });
 
+// Send Bulk WhatsApp Messages
+app.post('/api/send-bulk', requireAuth, upload.single('attachment'), async (req, res) => {
+  if (whatsappStatus !== 'ready' || !sock) {
+    return res.status(400).json({
+      error: 'WhatsApp is not ready. Please scan the QR code to connect.'
+    });
+  }
+
+  let recipients = [];
+  try {
+    recipients = typeof req.body.recipients === 'string' ? JSON.parse(req.body.recipients) : req.body.recipients;
+  } catch (e) {
+    return res.status(400).json({ error: 'Invalid recipients format.' });
+  }
+
+  if (!Array.isArray(recipients) || recipients.length === 0) {
+    return res.status(400).json({ error: 'At least one recipient must be selected.' });
+  }
+
+  const { message } = req.body;
+  if (!message && !req.file) {
+    return res.status(400).json({ error: 'Message content or image attachment is required.' });
+  }
+
+  let attachmentUrl = null;
+  let fileBuffer = null;
+  let mimetype = 'image/jpeg';
+
+  if (req.file) {
+    attachmentUrl = '/uploads/' + req.file.filename;
+    const mediaPath = path.join(uploadsDir, req.file.filename);
+    fileBuffer = fs.readFileSync(mediaPath);
+    mimetype = req.file.mimetype || 'image/jpeg';
+  }
+
+  const history = readJSON(HISTORY_FILE, []);
+  let sentCount = 0;
+  let failedCount = 0;
+  const newLogs = [];
+
+  const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+  for (let i = 0; i < recipients.length; i++) {
+    const item = recipients[i];
+    if (!item.phone) continue;
+
+    try {
+      const jid = await resolveJid(item.phone);
+      
+      let finalMessage = message || '';
+      if (item.name && finalMessage.includes('{name}')) {
+        finalMessage = finalMessage.replace(/\{name\}/g, item.name);
+      }
+      if (item.fileNo && finalMessage.includes('{fileNo}')) {
+        finalMessage = finalMessage.replace(/\{fileNo\}/g, item.fileNo);
+      }
+
+      if (fileBuffer) {
+        await sock.sendMessage(jid, {
+          image: fileBuffer,
+          caption: finalMessage,
+          mimetype
+        });
+      } else {
+        await sock.sendMessage(jid, { text: finalMessage });
+      }
+
+      sentCount++;
+      const log = {
+        id: 'msg_' + Date.now() + '_' + i,
+        officerId: item.id || null,
+        officerName: item.name || 'Recipient',
+        phone: item.phone,
+        message: finalMessage,
+        attachment: attachmentUrl,
+        timestamp: new Date().toISOString(),
+        status: 'SENT'
+      };
+      history.unshift(log);
+      newLogs.push(log);
+
+      if (i < recipients.length - 1) {
+        await delay(1500); // 1.5s delay between dispatches
+      }
+    } catch (err) {
+      console.error(`Bulk send error for ${item.phone}:`, err.message);
+      failedCount++;
+    }
+  }
+
+  writeJSON(HISTORY_FILE, history);
+
+  res.json({
+    success: true,
+    message: `Dispatched ${sentCount} message(s) successfully.${failedCount > 0 ? ` (${failedCount} failed)` : ''}`,
+    sentCount,
+    failedCount,
+    logs: newLogs
+  });
+});
+
 // Message History
 app.get('/api/history', (req, res) => {
   const history = readJSON(HISTORY_FILE, []);
