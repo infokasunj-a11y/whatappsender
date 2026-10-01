@@ -121,7 +121,12 @@ async function connectToWhatsApp() {
       auth: state,
       printQRInTerminal: false,
       logger: pino({ level: 'silent' }),
-      browser: ['Office WhatsApp Sender', 'Chrome', '1.0.0']
+      browser: ['Bandarawela DS WhatsApp', 'Chrome', '1.0.0'],
+      keepAliveIntervalMs: 25000,
+      connectTimeoutMs: 60000,
+      defaultQueryTimeoutMs: 60000,
+      syncFullHistory: false,
+      retryRequestDelayMs: 250
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -546,3 +551,13 @@ app.listen(PORT, () => {
   console.log(`http://localhost:${PORT}`);
   console.log(`===================================================`);
 });
+
+// Keep-Alive Self Ping (Prevents Render Free Tier from Sleeping)
+setInterval(() => {
+  const renderUrl = process.env.RENDER_EXTERNAL_URL;
+  if (renderUrl) {
+    fetch(`${renderUrl}/api/status`)
+      .then(() => console.log('Self-ping success: Server kept awake.'))
+      .catch(() => {});
+  }
+}, 8 * 60 * 1000);
