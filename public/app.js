@@ -64,6 +64,24 @@ document.addEventListener('DOMContentLoaded', () => {
   const clearHistoryBtn = document.getElementById('clearHistoryBtn');
   const selectAllCheckbox = document.getElementById('selectAllCheckbox');
   const selectedCountBadge = document.getElementById('selectedCountBadge');
+  const manageSectionsBtn = document.getElementById('manageSectionsBtn');
+  const historyFilterGroup = document.getElementById('historyFilterGroup');
+  const historySectionFilter = document.getElementById('historySectionFilter');
+
+  const sectionsModal = document.getElementById('sectionsModal');
+  const closeSectionsModalBtn = document.getElementById('closeSectionsModalBtn');
+  const closeSectionsBtn2 = document.getElementById('closeSectionsBtn2');
+  const sectionUserForm = document.getElementById('sectionUserForm');
+  const sectionUserIdInput = document.getElementById('sectionUserIdInput');
+  const secName = document.getElementById('secName');
+  const secUsername = document.getElementById('secUsername');
+  const secPassword = document.getElementById('secPassword');
+  const secRole = document.getElementById('secRole');
+  const sectionFormTitle = document.getElementById('sectionFormTitle');
+  const saveSectionBtn = document.getElementById('saveSectionBtn');
+  const cancelSectionEditBtn = document.getElementById('cancelSectionEditBtn');
+  const sectionsTableBody = document.getElementById('sectionsTableBody');
+  const sectionsCount = document.getElementById('sectionsCount');
 
   let activeTab = 'officers'; // 'officers' or 'customers'
   let activeRecipient = null; // selected officer, customer object or bulk object
@@ -219,12 +237,23 @@ document.addEventListener('DOMContentLoaded', () => {
       userName.textContent = user.name || 'User Portal';
       userBadge.style.display = 'inline-flex';
 
+      const isAdmin = user.role === 'admin';
       if (clearHistoryBtn) {
-        clearHistoryBtn.style.display = user.role === 'admin' ? 'inline-flex' : 'none';
+        clearHistoryBtn.style.display = isAdmin ? 'inline-flex' : 'none';
+      }
+      if (manageSectionsBtn) {
+        manageSectionsBtn.style.display = isAdmin ? 'inline-flex' : 'none';
+      }
+      if (historyFilterGroup) {
+        historyFilterGroup.style.display = isAdmin ? 'inline-flex' : 'none';
       }
 
-      // Automatically default Land Section & Clerks to Land Customer Files!
-      if (user.role === 'land_section' || user.role === 'clerk') {
+      if (isAdmin) {
+        populateSectionFilterOptions();
+      }
+
+      // Automatically default Section accounts to Land / Customer Files!
+      if (user.role === 'land_section' || user.role === 'section_user' || user.role === 'clerk') {
         switchToCustomerTab();
       } else {
         switchToOfficerTab();
@@ -632,14 +661,36 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 300);
   });
 
-  // --- 3. Quick Message Templates ---
+  // --- 3. Quick Message Templates & Do Not Reply Notice ---
   document.querySelectorAll('.pill').forEach(pill => {
     pill.addEventListener('click', () => {
       const template = pill.getAttribute('data-template');
-      messageText.value = template;
-      messageText.focus();
+      if (template) {
+        messageText.value = template;
+        messageText.focus();
+      }
     });
   });
+
+  const btnInsertDisclaimer = document.getElementById('btnInsertDisclaimer');
+  const includeDoNotReply = document.getElementById('includeDoNotReply');
+  const disclaimerPreviewBox = document.getElementById('disclaimerPreviewBox');
+
+  if (includeDoNotReply && disclaimerPreviewBox) {
+    includeDoNotReply.addEventListener('change', () => {
+      disclaimerPreviewBox.style.display = includeDoNotReply.checked ? 'block' : 'none';
+    });
+  }
+
+  if (btnInsertDisclaimer) {
+    btnInsertDisclaimer.addEventListener('click', () => {
+      const noticeText = `\n\n━━━━━━━━━━━━━━━━━━━━\n⚠️ *විශේෂ දැනුම්දීමයි:*\n*කරුණාකර මෙම පණිවිඩයට පිළිතුරු (Reply) නොඑවන්න.*\n*(Please DO NOT reply to this message)*\n━━━━━━━━━━━━━━━━━━━━`;
+      if (!messageText.value.includes('පිළිතුරු (Reply) නොඑවන්න') && !messageText.value.includes('Reply නොඑවන්න')) {
+        messageText.value = messageText.value.trim() ? `${messageText.value.trim()}${noticeText}` : noticeText.trim();
+      }
+      messageText.focus();
+    });
+  }
 
   // --- 4. File Attachment Upload Handler ---
   imageUpload.addEventListener('change', (e) => {
@@ -684,6 +735,21 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    // Attach Highlighted 'Do Not Reply' Notice if enabled
+    const includeNotice = document.getElementById('includeDoNotReply')?.checked;
+    const noReplyDisclaimer = `\n\n━━━━━━━━━━━━━━━━━━━━\n⚠️ *විශේෂ දැනුම්දීමයි:*\n*කරුණාකර මෙම පණිවිඩයට පිළිතුරු (Reply) නොඑවන්න.*\n*(Please DO NOT reply to this message)*\n━━━━━━━━━━━━━━━━━━━━`;
+
+    let messageToSend = text;
+    if (includeNotice) {
+      const alreadyHasNotice = messageToSend.includes('පිළිතුරු (Reply) නොඑවන්න') || 
+                               messageToSend.includes('Reply නොඑවන්න') || 
+                               messageToSend.includes('DO NOT reply') ||
+                               messageToSend.includes('Do not reply');
+      if (!alreadyHasNotice) {
+        messageToSend = messageToSend ? `${messageToSend}${noReplyDisclaimer}` : noReplyDisclaimer.trim();
+      }
+    }
+
     const count = selectedMap.size;
     const isBulk = count > 1;
 
@@ -704,7 +770,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const formData = new FormData();
         formData.append('recipients', JSON.stringify(recipientsArray));
-        formData.append('message', text);
+        formData.append('message', messageToSend);
         if (file) formData.append('attachment', file);
 
         res = await authFetch('/api/send-bulk', {
@@ -717,7 +783,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData();
         formData.append('officerId', singleRecipient.id);
         formData.append('phone', singleRecipient.phone);
-        formData.append('message', text);
+        formData.append('message', messageToSend);
         if (file) formData.append('attachment', file);
 
         res = await authFetch('/api/send', {
@@ -746,31 +812,65 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // --- 6. Message History Log ---
+  async function populateSectionFilterOptions() {
+    if (!historySectionFilter) return;
+    try {
+      const res = await authFetch('/api/sections');
+      if (!res.ok) return;
+      const sections = await res.json();
+      const currentVal = historySectionFilter.value;
+      historySectionFilter.innerHTML = '<option value="all">All Sections (සියලුම අංශ)</option>' +
+        sections.map(s => `<option value="${s.username}">${s.name}</option>`).join('');
+      if (currentVal) historySectionFilter.value = currentVal;
+    } catch (e) {
+      console.error('Error fetching sections for filter:', e);
+    }
+  }
+
+  if (historySectionFilter) {
+    historySectionFilter.addEventListener('change', () => {
+      loadHistory();
+    });
+  }
+
   async function loadHistory() {
     if (!authToken) return;
     try {
-      const res = await authFetch('/api/history');
+      const selectedSection = historySectionFilter ? historySectionFilter.value : 'all';
+      const url = `/api/history?section=${encodeURIComponent(selectedSection)}`;
+      const res = await authFetch(url);
       if (!res.ok) return;
       const history = await res.json();
 
       if (history.length === 0) {
-        historyList.innerHTML = `<div style="color: var(--text-muted); font-size: 0.85rem;">No sent messages yet.</div>`;
+        historyList.innerHTML = `<div style="color: var(--text-muted); font-size: 0.85rem; padding: 12px; text-align: center;">No sent messages found for this selection.</div>`;
         return;
       }
 
       const isAdmin = currentUser && currentUser.role === 'admin';
 
-      historyList.innerHTML = history.slice(0, 15).map(item => `
-        <div class="history-item">
-          <div>
-            <strong>${item.officerName}</strong> (${item.phone})<br>
-            <span style="color: var(--text-muted);">${item.message ? item.message.substring(0, 50) + '...' : '[Image attached]'}</span>
+      historyList.innerHTML = history.slice(0, 30).map(item => {
+        const senderBadge = item.sentBy
+          ? `<span class="badge" style="background: #ede9fe; color: #5b21b6; margin-right: 6px; font-weight: 600; font-size: 0.73rem;"><i class="fa-solid fa-building-columns"></i> ${item.sentBy.name || item.sentBy.username}</span>`
+          : `<span class="badge" style="background: #f1f5f9; color: #475569; margin-right: 6px; font-size: 0.73rem;"><i class="fa-solid fa-building-columns"></i> General</span>`;
+
+        return `
+        <div class="history-item" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 10px 12px; border-left: 3px solid ${item.sentBy && item.sentBy.role === 'admin' ? '#059669' : '#3b82f6'};">
+          <div style="flex: 1; min-width: 0;">
+            <div style="margin-bottom: 4px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px;">
+              ${senderBadge}
+              <strong>${item.officerName}</strong>
+              <span style="color: var(--text-muted); font-size: 0.78rem;">(${item.phone})</span>
+            </div>
+            <div style="color: var(--text-muted); font-size: 0.82rem; word-break: break-word;">
+              ${item.message ? item.message : '[Image Attachment]'}
+            </div>
           </div>
-          <div style="text-align: right; display: flex; align-items: center; gap: 8px;">
+          <div style="text-align: right; display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
             <div>
               <span class="badge" style="background: #dcfce7; color: #15803d;"><i class="fa-solid fa-check"></i> ${item.status}</span>
-              <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
-                ${new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">
+                ${new Date(item.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })} ${new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </div>
             </div>
             ${isAdmin ? `
@@ -780,7 +880,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ` : ''}
           </div>
         </div>
-      `).join('');
+      `;}).join('');
 
       if (isAdmin) {
         document.querySelectorAll('.delete-hist-btn').forEach(btn => {
@@ -957,6 +1057,137 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       } catch (err) {
         showToast('Error updating password.', 'error');
+      }
+    });
+  }
+
+  // --- 8. Section Accounts Management (Admin Only) ---
+  if (manageSectionsBtn) {
+    manageSectionsBtn.addEventListener('click', openSectionsModal);
+  }
+  if (closeSectionsModalBtn) {
+    closeSectionsModalBtn.addEventListener('click', () => sectionsModal.classList.remove('active'));
+  }
+  if (closeSectionsBtn2) {
+    closeSectionsBtn2.addEventListener('click', () => sectionsModal.classList.remove('active'));
+  }
+  if (cancelSectionEditBtn) {
+    cancelSectionEditBtn.addEventListener('click', resetSectionForm);
+  }
+
+  function resetSectionForm() {
+    sectionUserForm.reset();
+    sectionUserIdInput.value = '';
+    sectionFormTitle.textContent = 'Add New Section Account (නව අංශයක් එක් කරන්න)';
+    saveSectionBtn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Section Account';
+    cancelSectionEditBtn.style.display = 'none';
+  }
+
+  async function openSectionsModal() {
+    resetSectionForm();
+    sectionsModal.classList.add('active');
+    loadSectionsTable();
+  }
+
+  async function loadSectionsTable() {
+    try {
+      const res = await authFetch('/api/users');
+      if (!res.ok) return;
+      const users = await res.json();
+
+      sectionsCount.textContent = users.length;
+      sectionsTableBody.innerHTML = users.map(u => `
+        <tr style="border-bottom: 1px solid var(--border-color);">
+          <td style="padding: 10px 12px;">
+            <strong>${u.name}</strong>
+            <div style="font-size: 0.75rem; color: var(--text-muted);">Role / View: ${u.role}</div>
+          </td>
+          <td style="padding: 10px 12px; font-family: monospace; font-size: 0.9rem; color: #1e40af; font-weight: 600;">${u.username}</td>
+          <td style="padding: 10px 12px; font-family: monospace; color: #475569;">${u.password || '••••••'}</td>
+          <td style="padding: 10px 12px; text-align: right; white-space: nowrap;">
+            <button class="btn btn-icon edit-sec-btn" data-id="${u.id}" title="Edit Section Account" style="color: #2563eb; margin-right: 4px;">
+              <i class="fa-solid fa-pen"></i>
+            </button>
+            ${u.id !== 'usr_1' ? `
+              <button class="btn btn-icon delete-sec-btn" data-id="${u.id}" data-name="${u.name}" title="Delete Section Account" style="color: #ef4444;">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+            ` : '<span style="font-size: 0.72rem; color: var(--text-muted); font-style: italic;">Primary Admin</span>'}
+          </td>
+        </tr>
+      `).join('');
+
+      document.querySelectorAll('.edit-sec-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const uId = btn.getAttribute('data-id');
+          const target = users.find(u => u.id === uId);
+          if (target) {
+            sectionUserIdInput.value = target.id;
+            secName.value = target.name;
+            secUsername.value = target.username;
+            secPassword.value = target.password || '';
+            secRole.value = target.role;
+            sectionFormTitle.textContent = `Edit Section: ${target.name}`;
+            saveSectionBtn.innerHTML = '<i class="fa-solid fa-check"></i> Update Section Account';
+            cancelSectionEditBtn.style.display = 'inline-block';
+            secName.focus();
+          }
+        });
+      });
+
+      document.querySelectorAll('.delete-sec-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const uId = btn.getAttribute('data-id');
+          const uName = btn.getAttribute('data-name');
+          if (confirm(`Are you sure you want to remove section account "${uName}"?`)) {
+            const delRes = await authFetch(`/api/users/${uId}`, { method: 'DELETE' });
+            const data = await delRes.json();
+            if (delRes.ok && data.success) {
+              showToast('Section account removed successfully!', 'success');
+              loadSectionsTable();
+              populateSectionFilterOptions();
+            } else {
+              showToast(data.error || 'Failed to remove section.', 'error');
+            }
+          }
+        });
+      });
+    } catch (e) {
+      console.error('Error loading sections table:', e);
+    }
+  }
+
+  if (sectionUserForm) {
+    sectionUserForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = sectionUserIdInput.value;
+      const payload = {
+        name: secName.value.trim(),
+        username: secUsername.value.trim(),
+        password: secPassword.value.trim(),
+        role: secRole.value
+      };
+
+      const url = id ? `/api/users/${id}` : '/api/users';
+      const method = id ? 'PUT' : 'POST';
+
+      try {
+        const res = await authFetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast(data.message || (id ? 'Section updated!' : 'Section account created!'), 'success');
+          resetSectionForm();
+          loadSectionsTable();
+          populateSectionFilterOptions();
+        } else {
+          showToast(data.error || 'Failed to save section.', 'error');
+        }
+      } catch (err) {
+        showToast('Error saving section account.', 'error');
       }
     });
   }

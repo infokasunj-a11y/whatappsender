@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Bandarawela Divisional Secretariat | Office WhatsApp Dispatcher</title>
-  <link rel="stylesheet" href="style.css?v=3.0">
+  <link rel="stylesheet" href="style.css?v=3.1">
   <!-- FontAwesome & Google Fonts -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -25,6 +25,7 @@
       <div class="header-right-group">
         <div class="user-badge" id="userBadge" style="display: none;">
           <i class="fa-solid fa-user-shield"></i> <span id="userName">Section Head</span>
+          <button class="btn btn-sm btn-icon" id="manageSectionsBtn" title="Manage Section Accounts (Admin Only)" style="display: none; margin-left: 4px;"><i class="fa-solid fa-users-gear"></i> Sections</button>
           <button class="btn btn-sm btn-icon" id="openChangePassBtn" title="Change Password"><i class="fa-solid fa-key"></i></button>
           <button class="btn btn-sm btn-danger" id="userLogoutBtn" title="Logout / Switch Account" style="margin-left: 6px;">
             <i class="fa-solid fa-right-from-bracket"></i> Logout
@@ -138,6 +139,29 @@
           <div class="form-group">
             <label for="messageText" class="form-label">Message Content</label>
             <textarea id="messageText" rows="4" placeholder="Type your official message here..."></textarea>
+            
+            <!-- Do Not Reply Highlight Notice Box -->
+            <div class="disclaimer-container" style="margin-top: 8px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 14px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.88rem; font-weight: 600; color: #92400e; margin: 0;">
+                  <input type="checkbox" id="includeDoNotReply" checked style="width: 17px; height: 17px; accent-color: #d97706; cursor: pointer;">
+                  <span>⚠️ 'පිළිතුරු නොඑවන්න' (Do Not Reply) සටහන පණිවිඩයට එක් කරන්න</span>
+                </label>
+                <button type="button" id="btnInsertDisclaimer" style="background: #fef3c7; border: 1px solid #f59e0b; color: #b45309; padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; cursor: pointer;" title="Insert notice directly into the text box above">
+                  <i class="fa-solid fa-pen-to-square"></i> Textbox එකට ඇතුළත් කරන්න
+                </button>
+              </div>
+              <div id="disclaimerPreviewBox" style="margin-top: 8px; padding: 8px 10px; background: #ffffff; border-radius: 6px; border: 1px dashed #d97706; font-size: 0.8rem; color: #374151; line-height: 1.4;">
+                <span style="font-weight: 600; color: #b45309; display: block; margin-bottom: 4px; font-size: 0.74rem; text-transform: uppercase;">
+                  <i class="fa-brands fa-whatsapp" style="color: #25d366;"></i> WhatsApp එකේ Highlight වන ආකාරය (Preview):
+                </span>
+                <div style="font-family: monospace; white-space: pre-wrap; color: #111827; background: #fefce8; padding: 6px 10px; border-radius: 4px; border-left: 3px solid #f59e0b;">━━━━━━━━━━━━━━━━━━━━
+⚠️ *විශේෂ දැනුම්දීමයි:*
+*කරුණාකර මෙම පණිවිඩයට පිළිතුරු (Reply) නොඑවන්න.*
+*(Please DO NOT reply to this message)*
+━━━━━━━━━━━━━━━━━━━━</div>
+              </div>
+            </div>
           </div>
 
           <!-- Image / Attachment Upload -->
@@ -168,11 +192,19 @@
 
         <!-- Sent Message Log / History -->
         <div class="history-section">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
             <h3 style="margin: 0;"><i class="fa-solid fa-clock-rotate-left"></i> Recent Sent History</h3>
-            <button class="btn btn-sm btn-outline-danger" id="clearHistoryBtn" style="display: none;" title="Admin Only: Clear History">
-              <i class="fa-solid fa-trash-can"></i> Clear History
-            </button>
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <div id="historyFilterGroup" style="display: none; align-items: center; gap: 6px;">
+                <label for="historySectionFilter" style="font-size: 0.8rem; margin: 0; color: var(--text-muted); font-weight: 500;">Section:</label>
+                <select id="historySectionFilter" style="padding: 4px 8px; font-size: 0.8rem; border-radius: 6px; border: 1px solid var(--border-color); background: #fff; cursor: pointer;">
+                  <option value="all">All Sections (සියලුම අංශ)</option>
+                </select>
+              </div>
+              <button class="btn btn-sm btn-outline-danger" id="clearHistoryBtn" style="display: none;" title="Admin Only: Clear History">
+                <i class="fa-solid fa-trash-can"></i> Clear History
+              </button>
+            </div>
           </div>
           <div class="history-list" id="historyList">
             <!-- Dynamically populated -->
@@ -314,9 +346,82 @@
     </div>
   </div>
 
+  <!-- Section Accounts Management Modal (Admin Only) -->
+  <div class="modal" id="sectionsModal">
+    <div class="modal-content" style="max-width: 760px; max-height: 88vh; overflow-y: auto;">
+      <div class="modal-header">
+        <h3><i class="fa-solid fa-users-gear"></i> Section Accounts Management (අංශ ගිණුම් කළමනාකරණය)</h3>
+        <button class="modal-close" id="closeSectionsModalBtn">&times;</button>
+      </div>
+
+      <!-- Add / Edit Section Form -->
+      <div style="background: #f8fafc; border: 1px solid var(--border-color); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+        <h4 style="margin: 0 0 10px 0; font-size: 0.95rem; color: #1e293b;">
+          <i class="fa-solid fa-user-plus"></i> <span id="sectionFormTitle">Add New Section Account (නව අංශයක් එක් කරන්න)</span>
+        </h4>
+        <form id="sectionUserForm">
+          <input type="hidden" id="sectionUserIdInput">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label for="secName" style="font-size: 0.82rem;">Section Name (අංශයේ නම) *</label>
+              <input type="text" id="secName" required placeholder="e.g. Samurdhi Section (සමෘද්ධි අංශය)" style="padding: 8px 10px; font-size: 0.88rem;">
+            </div>
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label for="secUsername" style="font-size: 0.82rem;">Username (පිවිසුම් නම) *</label>
+              <input type="text" id="secUsername" required placeholder="e.g. samurdhisection" style="padding: 8px 10px; font-size: 0.88rem;">
+            </div>
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label for="secPassword" style="font-size: 0.82rem;">Password (මුරපදය) *</label>
+              <input type="text" id="secPassword" required placeholder="e.g. dssamurdhi123" style="padding: 8px 10px; font-size: 0.88rem;">
+            </div>
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label for="secRole" style="font-size: 0.82rem;">Default View / Category</label>
+              <select id="secRole" style="width: 100%; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 0.88rem;">
+                <option value="section_user">Customer Files (සේවාලාභී ලිපි ගොනු)</option>
+                <option value="land_section">Land Section (ඉඩම් අංශය)</option>
+                <option value="officer_user">Officers Directory (කාර්යාල නිලධාරීන්)</option>
+                <option value="admin">Administrator (ප්‍රාදේශීය ලේකම්)</option>
+              </select>
+            </div>
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
+            <button type="button" class="btn btn-sm btn-secondary" id="cancelSectionEditBtn" style="display: none;">Cancel Edit</button>
+            <button type="submit" class="btn btn-sm btn-primary" id="saveSectionBtn">
+              <i class="fa-solid fa-floppy-disk"></i> Save Section Account
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Sections List Table -->
+      <h4 style="margin: 0 0 8px 0; font-size: 0.95rem; color: #1e293b;">
+        <i class="fa-solid fa-list-check"></i> Configured Sections & Logins (<span id="sectionsCount">0</span>)
+      </h4>
+      <div style="overflow-x: auto; border: 1px solid var(--border-color); border-radius: 8px;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 0.84rem; text-align: left;">
+          <thead>
+            <tr style="background: #f1f5f9; border-bottom: 1px solid var(--border-color);">
+              <th style="padding: 8px 12px;">Section / Account Name</th>
+              <th style="padding: 8px 12px;">Username</th>
+              <th style="padding: 8px 12px;">Password</th>
+              <th style="padding: 8px 12px; text-align: right;">Action</th>
+            </tr>
+          </thead>
+          <tbody id="sectionsTableBody">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+      </div>
+
+      <div class="modal-footer" style="margin-top: 16px;">
+        <button type="button" class="btn btn-secondary" id="closeSectionsBtn2">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification -->
   <div class="toast" id="toast"></div>
 
-  <script src="app.js?v=3.0"></script>
+  <script src="app.js?v=3.1"></script>
 </body>
 </html>
