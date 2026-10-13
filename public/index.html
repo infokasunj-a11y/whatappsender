@@ -202,6 +202,31 @@
             </div>
           </div>
 
+          <!-- Scheduling Controls Box -->
+          <div class="schedule-box" style="margin-bottom: 16px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 600; color: #166534; margin: 0;">
+                <input type="checkbox" id="enableSchedule" style="width: 17px; height: 17px; accent-color: #16a34a; cursor: pointer;">
+                <span>📅 මෙම පණිවිඩය කලින් Schedule කරන්න (Send Later)</span>
+              </label>
+              <button type="button" id="btnViewScheduled" class="btn btn-sm" style="background: #ffffff; border: 1px solid #86efac; color: #166534; font-size: 0.78rem; font-weight: 600; padding: 3px 10px; border-radius: 6px; cursor: pointer;">
+                <i class="fa-solid fa-clock-rotate-left"></i> Schedule කළ පණිවිඩ (<span id="scheduledBadgeCount">0</span>)
+              </button>
+            </div>
+            
+            <div id="scheduleTimeContainer" style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #86efac;">
+              <div style="display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center;">
+                <label for="scheduleDateTime" style="font-size: 0.84rem; font-weight: 600; color: #14532d; margin: 0;">
+                  යැවිය යුතු දිනය සහ වේලාව:
+                </label>
+                <input type="datetime-local" id="scheduleDateTime" style="padding: 6px 10px; border: 1px solid #86efac; border-radius: 6px; font-size: 0.88rem; outline: none; background: #fff; width: 100%;">
+              </div>
+              <small style="display: block; margin-top: 6px; font-size: 0.75rem; color: #15803d;">
+                💡 තෝරාගත් දිනය සහ වේලාව පැමිණි පසු මෙම පණිවිඩය ස්වයංක්‍රීයව WhatsApp හරහා Dispatch වේ.
+              </small>
+            </div>
+          </div>
+
           <!-- Action Buttons -->
           <div class="form-actions">
             <button type="submit" class="btn btn-success btn-lg" id="sendBtn" disabled>
@@ -435,6 +460,32 @@
 
       <div class="modal-footer" style="margin-top: 16px;">
         <button type="button" class="btn btn-secondary" id="closeSectionsBtn2">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Scheduled Messages Queue -->
+  <div class="modal" id="scheduledModal">
+    <div class="modal-content" style="max-width: 720px; max-height: 85vh; display: flex; flex-direction: column;">
+      <div class="modal-header">
+        <h3 style="margin: 0; color: var(--text-color); font-size: 1.15rem;">
+          <i class="fa-solid fa-calendar-check" style="color: #16a34a;"></i> 📅 Scheduled Messages (කලින් සැකසූ පණිවිඩ)
+        </h3>
+        <button type="button" class="btn-close" id="closeScheduledModalBtn"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div style="padding: 10px 18px; border-bottom: 1px solid var(--border-color); background: #f8fafc; font-size: 0.82rem; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+        <span>නියමිත වේලාව පැමිණි විට ස්වයංක්‍රීයව Dispatch වන පණිවිඩ ලැයිස්තුව:</span>
+        <button type="button" id="refreshScheduledBtn" class="btn btn-sm btn-secondary" style="padding: 3px 10px; font-size: 0.78rem;">
+          <i class="fa-solid fa-rotate"></i> Refresh
+        </button>
+      </div>
+      <div class="modal-body" style="padding: 14px 18px; overflow-y: auto; flex: 1;">
+        <div id="scheduledItemsList" style="display: flex; flex-direction: column; gap: 10px;">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+      <div class="modal-footer" style="margin-top: 12px;">
+        <button type="button" class="btn btn-secondary" id="closeScheduledModalBtn2">Close</button>
       </div>
     </div>
   </div>
