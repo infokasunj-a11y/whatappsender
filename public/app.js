@@ -248,6 +248,37 @@ document.addEventListener('DOMContentLoaded', () => {
         historyFilterGroup.style.display = isAdmin ? 'inline-flex' : 'none';
       }
 
+      // WhatsApp Disconnect button: ONLY visible for Admin
+      if (logoutBtn) {
+        logoutBtn.style.display = (isAdmin && isWhatsAppReady) ? 'inline-flex' : 'none';
+      }
+
+      // Do Not Reply Checkbox (Message Tick): ONLY modifiable by Admin! For Section users, it is locked/mandatory!
+      const includeDoNotReply = document.getElementById('includeDoNotReply');
+      const lockNoticeBadge = document.getElementById('lockNoticeBadge');
+      const btnInsertDisclaimer = document.getElementById('btnInsertDisclaimer');
+      const previewHeaderBox = document.getElementById('previewHeaderBox');
+
+      if (includeDoNotReply) {
+        if (!isAdmin) {
+          includeDoNotReply.checked = true;
+          includeDoNotReply.disabled = true;
+          includeDoNotReply.style.display = 'none';
+          if (lockNoticeBadge) lockNoticeBadge.style.display = 'inline-flex';
+          if (btnInsertDisclaimer) btnInsertDisclaimer.style.display = 'none';
+        } else {
+          includeDoNotReply.disabled = false;
+          includeDoNotReply.style.display = 'inline-block';
+          if (lockNoticeBadge) lockNoticeBadge.style.display = 'none';
+          if (btnInsertDisclaimer) btnInsertDisclaimer.style.display = 'inline-block';
+        }
+      }
+
+      if (previewHeaderBox) {
+        let sec = (!isAdmin && user.name) ? `\n📂 *අංශය:* ${user.name}` : '';
+        previewHeaderBox.textContent = `━━━━━━━━━━━━━━━━━━━━\n🏛️ *ප්‍රාදේශීය ලේකම් කාර්යාලය - බණ්ඩාරවෙල*\n*(Divisional Secretariat - Bandarawela)*${sec}\n━━━━━━━━━━━━━━━━━━━━`;
+      }
+
       if (isAdmin) {
         populateSectionFilterOptions();
       }
@@ -292,7 +323,11 @@ document.addEventListener('DOMContentLoaded', () => {
         statusTitle.textContent = 'WhatsApp Connected';
         statusSub.textContent = data.info ? `Online as +${data.info.wid}` : 'Ready to send messages';
         qrBanner.style.display = 'none';
-        logoutBtn.style.display = 'inline-flex';
+        
+        // Disconnect button only visible to Admin
+        const isAdmin = currentUser && currentUser.role === 'admin';
+        logoutBtn.style.display = isAdmin ? 'inline-flex' : 'none';
+        
         updateSendButtonState();
       } else if (data.status === 'qr' && data.qrCode) {
         isWhatsAppReady = false;
@@ -329,7 +364,11 @@ document.addEventListener('DOMContentLoaded', () => {
   checkWhatsAppStatus();
 
   logoutBtn.addEventListener('click', async () => {
-    if (confirm('Are you sure you want to disconnect this WhatsApp session?')) {
+    if (!currentUser || currentUser.role !== 'admin') {
+      showToast('Access denied. Only Administrator can disconnect WhatsApp.', 'error');
+      return;
+    }
+    if (confirm('Are you sure you want to disconnect this WhatsApp session? (Admin Only)')) {
       await authFetch('/api/logout', { method: 'POST' });
       checkWhatsAppStatus();
       showToast('WhatsApp session disconnected.', 'info');
@@ -684,10 +723,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (btnInsertDisclaimer) {
     btnInsertDisclaimer.addEventListener('click', () => {
-      const noticeText = `\n\n━━━━━━━━━━━━━━━━━━━━\n⚠️ *විශේෂ දැනුම්දීමයි:*\n*කරුණාකර මෙම පණිවිඩයට පිළිතුරු (Reply) නොඑවන්න.*\n*(Please DO NOT reply to this message)*\n━━━━━━━━━━━━━━━━━━━━`;
-      if (!messageText.value.includes('පිළිතුරු (Reply) නොඑවන්න') && !messageText.value.includes('Reply නොඑවන්න')) {
-        messageText.value = messageText.value.trim() ? `${messageText.value.trim()}${noticeText}` : noticeText.trim();
+      let secTag = '';
+      if (currentUser && currentUser.name && currentUser.role !== 'admin') {
+        secTag = `\n📂 *අංශය:* ${currentUser.name}`;
       }
+      const headerText = `━━━━━━━━━━━━━━━━━━━━\n🏛️ *ප්‍රාදේශීය ලේකම් කාර්යාලය - බණ්ඩාරවෙල*\n*(Divisional Secretariat - Bandarawela)*${secTag}\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      const noticeText = `\n\n━━━━━━━━━━━━━━━━━━━━\n⚠️ *විශේෂ දැනුම්දීමයි:*\n*කරුණාකර මෙම පණිවිඩයට පිළිතුරු (Reply) නොඑවන්න.*\n*(Please DO NOT reply to this message)*\n━━━━━━━━━━━━━━━━━━━━`;
+      
+      let val = messageText.value.trim();
+      if (!val.includes('ප්‍රාදේශීය ලේකම් කාර්යාලය - බණ්ඩාරවෙල')) {
+        val = `${headerText}${val}`;
+      }
+      if (!val.includes('පිළිතුරු (Reply) නොඑවන්න') && !val.includes('Reply නොඑවන්න')) {
+        val = `${val}${noticeText}`;
+      }
+      messageText.value = val;
       messageText.focus();
     });
   }
@@ -735,19 +785,38 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Attach Highlighted 'Do Not Reply' Notice if enabled
-    const includeNotice = document.getElementById('includeDoNotReply')?.checked;
+    // Format Official Bandarawela DS Heading
+    let secTag = '';
+    if (currentUser && currentUser.name && currentUser.role !== 'admin') {
+      secTag = `\n📂 *අංශය:* ${currentUser.name}`;
+    }
+    const officialHeader = `━━━━━━━━━━━━━━━━━━━━\n🏛️ *ප්‍රාදේශීය ලේකම් කාර්යාලය - බණ්ඩාරවෙල*\n*(Divisional Secretariat - Bandarawela)*${secTag}\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+    // Highlighted 'Do Not Reply' Notice
     const noReplyDisclaimer = `\n\n━━━━━━━━━━━━━━━━━━━━\n⚠️ *විශේෂ දැනුම්දීමයි:*\n*කරුණාකර මෙම පණිවිඩයට පිළිතුරු (Reply) නොඑවන්න.*\n*(Please DO NOT reply to this message)*\n━━━━━━━━━━━━━━━━━━━━`;
 
+    // Only Admin can untick notice; For all other users (sections) it is permanently MANDATORY!
+    const isAdmin = currentUser && currentUser.role === 'admin';
+    const includeNotice = !isAdmin || document.getElementById('includeDoNotReply')?.checked;
+
     let messageToSend = text;
+
+    // Attach Official Heading if not already present
+    if (messageToSend && !messageToSend.includes('ප්‍රාදේශීය ලේකම් කාර්යාලය - බණ්ඩාරවෙල')) {
+      messageToSend = `${officialHeader}${messageToSend}`;
+    }
+
+    // Attach 'Do Not Reply' Notice if enabled / mandatory
     if (includeNotice) {
       const alreadyHasNotice = messageToSend.includes('පිළිතුරු (Reply) නොඑවන්න') || 
                                messageToSend.includes('Reply නොඑවන්න') || 
                                messageToSend.includes('DO NOT reply') ||
                                messageToSend.includes('Do not reply');
       if (!alreadyHasNotice) {
-        messageToSend = messageToSend ? `${messageToSend}${noReplyDisclaimer}` : noReplyDisclaimer.trim();
+        messageToSend = messageToSend ? `${messageToSend}${noReplyDisclaimer}` : `${officialHeader.trim()}${noReplyDisclaimer}`;
       }
+    } else if (!messageToSend && file) {
+      messageToSend = `${officialHeader.trim()}`;
     }
 
     const count = selectedMap.size;
