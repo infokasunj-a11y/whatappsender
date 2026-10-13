@@ -60,6 +60,7 @@ const CUSTOMERS_FILE = path.join(dataDir, 'customers.json');
 const HISTORY_FILE = path.join(dataDir, 'history.json');
 const USERS_FILE = path.join(dataDir, 'users.json');
 const TOKENS_FILE = path.join(dataDir, 'tokens.json');
+const SCHEDULED_FILE = path.join(dataDir, 'scheduled.json');
 
 function readTokens() {
   try {
@@ -376,8 +377,11 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// Logout WhatsApp Session
-app.post('/api/logout', async (req, res) => {
+// Logout WhatsApp Session (Admin Only)
+app.post('/api/logout', requireAuth, async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Access denied. Only Administrator can disconnect WhatsApp.' });
+  }
   try {
     if (sock && (whatsappStatus === 'ready' || whatsappStatus === 'authenticated')) {
       await sock.logout();
@@ -730,6 +734,233 @@ app.post('/api/send-bulk', requireAuth, upload.single('attachment'), async (req,
   });
 });
 
+// --- SCHEDULED MESSAGES SYSTEM ---
+
+// 1. Create a Scheduled Message (Single or Bulk)
+app.post('/api/schedule', requireAuth, upload.single('attachment'), async (req, res) => {
+  const { scheduledAt, isBulk, recipients, officerId, phone, recipientName, message } = req.body;
+
+  if (!scheduledAt) {
+    return res.status(400).json({ error: 'Scheduled date & time is required.' });
+  }
+
+  const targetDate = new Date(scheduledAt);
+  if (isNaN(targetDate.getTime())) {
+    return res.status(400).json({ error: 'Invalid scheduled date & time format.' });
+  }
+
+  if (targetDate.getTime() <= Date.now()) {
+    return res.status(400).json({ error: 'Scheduled time must be in the future.' });
+  }
+
+  if (!message && !req.file) {
+    return res.status(400).json({ error: 'Message content or image attachment is required.' });
+  }
+
+  const isBulkBool = isBulk === 'true' || isBulk === true;
+  let parsedRecipients = [];
+  if (isBulkBool) {
+    try {
+      parsedRecipients = typeof recipients === 'string' ? JSON.parse(recipients) : recipients;
+    } catch (e) {
+      return res.status(400).json({ error: 'Invalid recipients format.' });
+    }
+    if (!Array.isArray(parsedRecipients) || parsedRecipients.length === 0) {
+      return res.status(400).json({ error: 'At least one recipient must be selected.' });
+    }
+  } else {
+    if (!phone) {
+      return res.status(400).json({ error: 'Phone number is required.' });
+    }
+  }
+
+  let attachmentUrl = null;
+  if (req.file) {
+    attachmentUrl = '/uploads/' + req.file.filename;
+  }
+
+  const scheduledList = readJSON(SCHEDULED_FILE, []);
+  const newScheduleItem = {
+    id: 'sched_' + Date.now(),
+    isBulk: isBulkBool,
+    recipients: isBulkBool ? parsedRecipients : null,
+    officerId: isBulkBool ? null : (officerId || null),
+    phone: isBulkBool ? null : phone,
+    recipientName: isBulkBool ? `${parsedRecipients.length} Recipients (Bulk)` : (recipientName || 'Recipient'),
+    message: message || '',
+    attachment: attachmentUrl,
+    scheduledAt: targetDate.toISOString(),
+    createdAt: new Date().toISOString(),
+    status: 'PENDING',
+    sentBy: {
+      id: req.user.id,
+      username: req.user.username,
+      name: req.user.name,
+      role: req.user.role
+    }
+  };
+
+  scheduledList.unshift(newScheduleItem);
+  writeJSON(SCHEDULED_FILE, scheduledList);
+
+  res.json({
+    success: true,
+    message: `Message scheduled successfully for ${targetDate.toLocaleString()}!`,
+    schedule: newScheduleItem
+  });
+});
+
+// 2. Get Scheduled Messages
+app.get('/api/scheduled', requireAuth, (req, res) => {
+  const scheduledList = readJSON(SCHEDULED_FILE, []);
+  let result = scheduledList;
+
+  if (req.user.role !== 'admin') {
+    result = result.filter(item =>
+      item.sentBy && item.sentBy.username === req.user.username
+    );
+  }
+
+  res.json(result);
+});
+
+// 3. Cancel / Delete Scheduled Message
+app.delete('/api/scheduled/:id', requireAuth, (req, res) => {
+  const scheduledList = readJSON(SCHEDULED_FILE, []);
+  const index = scheduledList.findIndex(item => item.id === req.params.id);
+
+  if (index === -1) {
+    return res.status(404).json({ error: 'Scheduled message not found.' });
+  }
+
+  const item = scheduledList[index];
+  if (req.user.role !== 'admin' && (!item.sentBy || item.sentBy.username !== req.user.username)) {
+    return res.status(403).json({ error: 'Access denied. You can only cancel your own scheduled messages.' });
+  }
+
+  scheduledList.splice(index, 1);
+  writeJSON(SCHEDULED_FILE, scheduledList);
+
+  res.json({ success: true, message: 'Scheduled message cancelled successfully.' });
+});
+
+// 4. Background Scheduled Dispatcher Worker
+let isProcessingScheduled = false;
+
+async function processScheduledQueue() {
+  if (isProcessingScheduled) return;
+  if (whatsappStatus !== 'ready' || !sock) return;
+
+  isProcessingScheduled = true;
+  try {
+    const scheduledList = readJSON(SCHEDULED_FILE, []);
+    const now = new Date();
+    let modified = false;
+
+    for (let item of scheduledList) {
+      if (item.status === 'PENDING' && new Date(item.scheduledAt) <= now) {
+        console.log(`[Scheduler] Dispatching scheduled item: ${item.id} (Scheduled for: ${item.scheduledAt})`);
+        
+        try {
+          let attachmentBuffer = null;
+          let mimetype = 'image/jpeg';
+          if (item.attachment) {
+            const mediaPath = path.join(__dirname, 'public', item.attachment);
+            if (fs.existsSync(mediaPath)) {
+              attachmentBuffer = fs.readFileSync(mediaPath);
+            }
+          }
+
+          if (item.isBulk && Array.isArray(item.recipients)) {
+            // Bulk dispatch
+            for (let i = 0; i < item.recipients.length; i++) {
+              const rec = item.recipients[i];
+              if (!rec.phone) continue;
+              try {
+                const jid = await resolveJid(rec.phone);
+                let finalMsg = item.message || '';
+                if (rec.name && finalMsg.includes('{name}')) finalMsg = finalMsg.replace(/\{name\}/g, rec.name);
+                if (rec.fileNo && finalMsg.includes('{fileNo}')) finalMsg = finalMsg.replace(/\{fileNo\}/g, rec.fileNo);
+
+                if (attachmentBuffer) {
+                  await sock.sendMessage(jid, { image: attachmentBuffer, caption: finalMsg, mimetype });
+                } else {
+                  await sock.sendMessage(jid, { text: finalMsg });
+                }
+
+                const history = readJSON(HISTORY_FILE, []);
+                history.unshift({
+                  id: 'msg_sched_' + Date.now() + '_' + i,
+                  officerId: rec.id || null,
+                  officerName: rec.name || 'Recipient',
+                  phone: rec.phone,
+                  message: finalMsg,
+                  attachment: item.attachment || null,
+                  timestamp: new Date().toISOString(),
+                  status: 'SENT',
+                  scheduledFrom: item.id,
+                  sentBy: item.sentBy
+                });
+                writeJSON(HISTORY_FILE, history);
+
+                if (i < item.recipients.length - 1) {
+                  await new Promise(r => setTimeout(r, 1500));
+                }
+              } catch (subErr) {
+                console.error(`[Scheduler Bulk Error] ${rec.phone}:`, subErr.message);
+              }
+            }
+          } else {
+            // Single dispatch
+            const jid = await resolveJid(item.phone);
+            if (attachmentBuffer) {
+              await sock.sendMessage(jid, { image: attachmentBuffer, caption: item.message || '', mimetype });
+            } else {
+              await sock.sendMessage(jid, { text: item.message });
+            }
+
+            const history = readJSON(HISTORY_FILE, []);
+            history.unshift({
+              id: 'msg_sched_' + Date.now(),
+              officerId: item.officerId || null,
+              officerName: item.recipientName || 'Recipient',
+              phone: item.phone,
+              message: item.message || '',
+              attachment: item.attachment || null,
+              timestamp: new Date().toISOString(),
+              status: 'SENT',
+              scheduledFrom: item.id,
+              sentBy: item.sentBy
+            });
+            writeJSON(HISTORY_FILE, history);
+          }
+
+          item.status = 'SENT';
+          item.executedAt = new Date().toISOString();
+          modified = true;
+        } catch (err) {
+          console.error(`[Scheduler Error] Item ${item.id}:`, err.message);
+          item.status = 'FAILED';
+          item.error = err.message;
+          item.lastAttemptAt = new Date().toISOString();
+          modified = true;
+        }
+      }
+    }
+
+    if (modified) {
+      writeJSON(SCHEDULED_FILE, scheduledList);
+    }
+  } catch (err) {
+    console.error('[Scheduler Worker Error]:', err.message);
+  } finally {
+    isProcessingScheduled = false;
+  }
+}
+
+// Check scheduled queue every 20 seconds
+setInterval(processScheduledQueue, 20 * 1000);
+
 // Message History with Section Tracking
 app.get('/api/history', requireAuth, (req, res) => {
   const history = readJSON(HISTORY_FILE, []);
@@ -801,3 +1032,12 @@ setInterval(() => {
       .catch(() => {});
   }
 }, 8 * 60 * 1000);
+
+// Global Error Guards (Prevents server crash on socket disconnects/timeouts)
+process.on('uncaughtException', (err) => {
+  console.error('Handled Uncaught Exception:', err.message);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Handled Unhandled Rejection:', reason && reason.message ? reason.message : reason);
+});

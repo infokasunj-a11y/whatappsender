@@ -139,6 +139,49 @@
           <div class="form-group">
             <label for="messageText" class="form-label">Message Content</label>
             <textarea id="messageText" rows="4" placeholder="Type your official message here..."></textarea>
+            
+            <!-- Official Message Header & Do Not Reply Notice Box -->
+            <div class="disclaimer-container" style="margin-top: 8px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 14px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                <!-- Admin Checkbox or Locked Badge for Non-Admins -->
+                <div id="doNotReplyControlGroup" style="display: flex; align-items: center; gap: 8px;">
+                  <label id="doNotReplyLabel" style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.88rem; font-weight: 600; color: #92400e; margin: 0;">
+                    <input type="checkbox" id="includeDoNotReply" checked style="width: 17px; height: 17px; accent-color: #d97706; cursor: pointer;">
+                    <span>⚠️ 'පිළිතුරු නොඑවන්න' (Do Not Reply) සටහන</span>
+                  </label>
+                  <span id="lockNoticeBadge" style="display: none; align-items: center; gap: 4px; background: #fef3c7; color: #b45309; padding: 2px 8px; border-radius: 6px; font-size: 0.76rem; font-weight: 600; border: 1px solid #fcd34d;">
+                    <i class="fa-solid fa-lock"></i> අංශ ගිණුම් සඳහා ස්ථිරවම ක්‍රියාත්මකයි (Mandatory)
+                  </span>
+                </div>
+                <button type="button" id="btnInsertDisclaimer" style="background: #fef3c7; border: 1px solid #f59e0b; color: #b45309; padding: 3px 8px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; cursor: pointer;" title="Insert notice directly into the text box above">
+                  <i class="fa-solid fa-pen-to-square"></i> Textbox එකට දාන්න
+                </button>
+              </div>
+
+              <!-- Official WhatsApp Message Preview (Heading + Body + Footer) -->
+              <div id="disclaimerPreviewBox" style="margin-top: 8px; padding: 8px 10px; background: #ffffff; border-radius: 6px; border: 1px dashed #d97706; font-size: 0.8rem; color: #374151; line-height: 1.4;">
+                <span style="font-weight: 600; color: #b45309; display: block; margin-bottom: 6px; font-size: 0.74rem; text-transform: uppercase;">
+                  <i class="fa-brands fa-whatsapp" style="color: #25d366;"></i> WhatsApp එකට ලැබෙන නිල පණිවිඩයේ ආකෘතිය (Official Layout):
+                </span>
+                
+                <!-- Official Header Preview -->
+                <div id="previewHeaderBox" style="font-family: monospace; white-space: pre-wrap; color: #1e3a8a; background: #eff6ff; padding: 6px 10px; border-radius: 4px; border-left: 3px solid #3b82f6; margin-bottom: 6px;">━━━━━━━━━━━━━━━━━━━━
+🏛️ *ප්‍රාදේශීය ලේකම් කාර්යාලය - බණ්ඩාරවෙල*
+*(Divisional Secretariat - Bandarawela)*
+━━━━━━━━━━━━━━━━━━━━</div>
+
+                <div style="font-family: monospace; color: #6b7280; padding: 4px 8px; font-style: italic; background: #f9fafb; border-radius: 4px; margin-bottom: 6px; text-align: center; border: 1px dashed #e5e7eb;">
+                  [ ඔබ ඇතුළත් කරන පණිවිඩය (Message Content) මෙතැන දිස්වේ ]
+                </div>
+
+                <!-- Footer Preview -->
+                <div id="previewFooterBox" style="font-family: monospace; white-space: pre-wrap; color: #111827; background: #fefce8; padding: 6px 10px; border-radius: 4px; border-left: 3px solid #f59e0b;">━━━━━━━━━━━━━━━━━━━━
+⚠️ *විශේෂ දැනුම්දීමයි:*
+*කරුණාකර මෙම පණිවිඩයට පිළිතුරු (Reply) නොඑවන්න.*
+*(Please DO NOT reply to this message)*
+━━━━━━━━━━━━━━━━━━━━</div>
+              </div>
+            </div>
           </div>
 
           <!-- Image / Attachment Upload -->
@@ -156,6 +199,31 @@
                 <img id="previewImg" src="" alt="Attachment Preview">
                 <button type="button" class="btn-remove-file" id="removeFileBtn"><i class="fa-solid fa-xmark"></i></button>
               </div>
+            </div>
+          </div>
+
+          <!-- Scheduling Controls Box -->
+          <div class="schedule-box" style="margin-bottom: 16px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px 14px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+              <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 600; color: #166534; margin: 0;">
+                <input type="checkbox" id="enableSchedule" style="width: 17px; height: 17px; accent-color: #16a34a; cursor: pointer;">
+                <span>📅 මෙම පණිවිඩය කලින් Schedule කරන්න (Send Later)</span>
+              </label>
+              <button type="button" id="btnViewScheduled" class="btn btn-sm" style="background: #ffffff; border: 1px solid #86efac; color: #166534; font-size: 0.78rem; font-weight: 600; padding: 3px 10px; border-radius: 6px; cursor: pointer;">
+                <i class="fa-solid fa-clock-rotate-left"></i> Schedule කළ පණිවිඩ (<span id="scheduledBadgeCount">0</span>)
+              </button>
+            </div>
+            
+            <div id="scheduleTimeContainer" style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px dashed #86efac;">
+              <div style="display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center;">
+                <label for="scheduleDateTime" style="font-size: 0.84rem; font-weight: 600; color: #14532d; margin: 0;">
+                  යැවිය යුතු දිනය සහ වේලාව:
+                </label>
+                <input type="datetime-local" id="scheduleDateTime" style="padding: 6px 10px; border: 1px solid #86efac; border-radius: 6px; font-size: 0.88rem; outline: none; background: #fff; width: 100%;">
+              </div>
+              <small style="display: block; margin-top: 6px; font-size: 0.75rem; color: #15803d;">
+                💡 තෝරාගත් දිනය සහ වේලාව පැමිණි පසු මෙම පණිවිඩය ස්වයංක්‍රීයව WhatsApp හරහා Dispatch වේ.
+              </small>
             </div>
           </div>
 
@@ -392,6 +460,32 @@
 
       <div class="modal-footer" style="margin-top: 16px;">
         <button type="button" class="btn btn-secondary" id="closeSectionsBtn2">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Scheduled Messages Queue -->
+  <div class="modal" id="scheduledModal">
+    <div class="modal-content" style="max-width: 720px; max-height: 85vh; display: flex; flex-direction: column;">
+      <div class="modal-header">
+        <h3 style="margin: 0; color: var(--text-color); font-size: 1.15rem;">
+          <i class="fa-solid fa-calendar-check" style="color: #16a34a;"></i> 📅 Scheduled Messages (කලින් සැකසූ පණිවිඩ)
+        </h3>
+        <button type="button" class="btn-close" id="closeScheduledModalBtn"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div style="padding: 10px 18px; border-bottom: 1px solid var(--border-color); background: #f8fafc; font-size: 0.82rem; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+        <span>නියමිත වේලාව පැමිණි විට ස්වයංක්‍රීයව Dispatch වන පණිවිඩ ලැයිස්තුව:</span>
+        <button type="button" id="refreshScheduledBtn" class="btn btn-sm btn-secondary" style="padding: 3px 10px; font-size: 0.78rem;">
+          <i class="fa-solid fa-rotate"></i> Refresh
+        </button>
+      </div>
+      <div class="modal-body" style="padding: 14px 18px; overflow-y: auto; flex: 1;">
+        <div id="scheduledItemsList" style="display: flex; flex-direction: column; gap: 10px;">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+      <div class="modal-footer" style="margin-top: 12px;">
+        <button type="button" class="btn btn-secondary" id="closeScheduledModalBtn2">Close</button>
       </div>
     </div>
   </div>

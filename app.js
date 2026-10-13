@@ -248,9 +248,41 @@ document.addEventListener('DOMContentLoaded', () => {
         historyFilterGroup.style.display = isAdmin ? 'inline-flex' : 'none';
       }
 
+      // WhatsApp Disconnect button: ONLY visible for Admin
+      if (logoutBtn) {
+        logoutBtn.style.display = (isAdmin && isWhatsAppReady) ? 'inline-flex' : 'none';
+      }
+
+      // Do Not Reply Checkbox (Message Tick): ONLY modifiable by Admin! For Section users, it is locked/mandatory!
+      const includeDoNotReply = document.getElementById('includeDoNotReply');
+      const lockNoticeBadge = document.getElementById('lockNoticeBadge');
+      const btnInsertDisclaimer = document.getElementById('btnInsertDisclaimer');
+      const previewHeaderBox = document.getElementById('previewHeaderBox');
+
+      if (includeDoNotReply) {
+        if (!isAdmin) {
+          includeDoNotReply.checked = true;
+          includeDoNotReply.disabled = true;
+          includeDoNotReply.style.display = 'none';
+          if (lockNoticeBadge) lockNoticeBadge.style.display = 'inline-flex';
+          if (btnInsertDisclaimer) btnInsertDisclaimer.style.display = 'none';
+        } else {
+          includeDoNotReply.disabled = false;
+          includeDoNotReply.style.display = 'inline-block';
+          if (lockNoticeBadge) lockNoticeBadge.style.display = 'none';
+          if (btnInsertDisclaimer) btnInsertDisclaimer.style.display = 'inline-block';
+        }
+      }
+
+      if (previewHeaderBox) {
+        let sec = (!isAdmin && user.name) ? `\n📂 *අංශය:* ${user.name}` : '';
+        previewHeaderBox.textContent = `━━━━━━━━━━━━━━━━━━━━\n🏛️ *ප්‍රාදේශීය ලේකම් කාර්යාලය - බණ්ඩාරවෙල*\n*(Divisional Secretariat - Bandarawela)*${sec}\n━━━━━━━━━━━━━━━━━━━━`;
+      }
+
       if (isAdmin) {
         populateSectionFilterOptions();
       }
+      updateScheduledBadge();
 
       // Automatically default Section accounts to Land / Customer Files!
       if (user.role === 'land_section' || user.role === 'section_user' || user.role === 'clerk') {
@@ -292,7 +324,11 @@ document.addEventListener('DOMContentLoaded', () => {
         statusTitle.textContent = 'WhatsApp Connected';
         statusSub.textContent = data.info ? `Online as +${data.info.wid}` : 'Ready to send messages';
         qrBanner.style.display = 'none';
-        logoutBtn.style.display = 'inline-flex';
+        
+        // Disconnect button only visible to Admin
+        const isAdmin = currentUser && currentUser.role === 'admin';
+        logoutBtn.style.display = isAdmin ? 'inline-flex' : 'none';
+        
         updateSendButtonState();
       } else if (data.status === 'qr' && data.qrCode) {
         isWhatsAppReady = false;
@@ -329,7 +365,11 @@ document.addEventListener('DOMContentLoaded', () => {
   checkWhatsAppStatus();
 
   logoutBtn.addEventListener('click', async () => {
-    if (confirm('Are you sure you want to disconnect this WhatsApp session?')) {
+    if (!currentUser || currentUser.role !== 'admin') {
+      showToast('Access denied. Only Administrator can disconnect WhatsApp.', 'error');
+      return;
+    }
+    if (confirm('Are you sure you want to disconnect this WhatsApp session? (Admin Only)')) {
       await authFetch('/api/logout', { method: 'POST' });
       checkWhatsAppStatus();
       showToast('WhatsApp session disconnected.', 'info');
@@ -430,16 +470,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateSendButtonState() {
     const count = selectedMap.size;
+    const isScheduled = enableSchedule && enableSchedule.checked;
     if (isWhatsAppReady && count > 0 && authToken) {
       sendBtn.removeAttribute('disabled');
-      if (count > 1) {
-        sendBtn.innerHTML = `<i class="fa-brands fa-whatsapp"></i> Send Bulk Message (${count} Recipients)`;
+      if (isScheduled) {
+        sendBtn.innerHTML = count > 1
+          ? `<i class="fa-solid fa-calendar-plus"></i> Schedule Bulk Message (${count} Recipients)`
+          : `<i class="fa-solid fa-calendar-plus"></i> Schedule WhatsApp Message`;
       } else {
-        sendBtn.innerHTML = `<i class="fa-brands fa-whatsapp"></i> Send via Office WhatsApp`;
+        if (count > 1) {
+          sendBtn.innerHTML = `<i class="fa-brands fa-whatsapp"></i> Send Bulk Message (${count} Recipients)`;
+        } else {
+          sendBtn.innerHTML = `<i class="fa-brands fa-whatsapp"></i> Send via Office WhatsApp`;
+        }
       }
     } else {
       sendBtn.setAttribute('disabled', 'true');
-      sendBtn.innerHTML = `<i class="fa-brands fa-whatsapp"></i> Send via Office WhatsApp`;
+      sendBtn.innerHTML = isScheduled
+        ? `<i class="fa-solid fa-calendar-plus"></i> Schedule WhatsApp Message`
+        : `<i class="fa-brands fa-whatsapp"></i> Send via Office WhatsApp`;
     }
   }
 
@@ -661,14 +710,190 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 300);
   });
 
-  // --- 3. Quick Message Templates ---
+  // --- 3. Quick Message Templates & Do Not Reply Notice ---
   document.querySelectorAll('.pill').forEach(pill => {
     pill.addEventListener('click', () => {
       const template = pill.getAttribute('data-template');
-      messageText.value = template;
-      messageText.focus();
+      if (template) {
+        messageText.value = template;
+        messageText.focus();
+      }
     });
   });
+
+  const btnInsertDisclaimer = document.getElementById('btnInsertDisclaimer');
+  const includeDoNotReply = document.getElementById('includeDoNotReply');
+  const disclaimerPreviewBox = document.getElementById('disclaimerPreviewBox');
+
+  if (includeDoNotReply && disclaimerPreviewBox) {
+    includeDoNotReply.addEventListener('change', () => {
+      disclaimerPreviewBox.style.display = includeDoNotReply.checked ? 'block' : 'none';
+    });
+  }
+
+  if (btnInsertDisclaimer) {
+    btnInsertDisclaimer.addEventListener('click', () => {
+      let secTag = '';
+      if (currentUser && currentUser.name && currentUser.role !== 'admin') {
+        secTag = `\n📂 *අංශය:* ${currentUser.name}`;
+      }
+      const headerText = `━━━━━━━━━━━━━━━━━━━━\n🏛️ *ප්‍රාදේශීය ලේකම් කාර්යාලය - බණ්ඩාරවෙල*\n*(Divisional Secretariat - Bandarawela)*${secTag}\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      const noticeText = `\n\n━━━━━━━━━━━━━━━━━━━━\n⚠️ *විශේෂ දැනුම්දීමයි:*\n*කරුණාකර මෙම පණිවිඩයට පිළිතුරු (Reply) නොඑවන්න.*\n*(Please DO NOT reply to this message)*\n━━━━━━━━━━━━━━━━━━━━`;
+      
+      let val = messageText.value.trim();
+      if (!val.includes('ප්‍රාදේශීය ලේකම් කාර්යාලය - බණ්ඩාරවෙල')) {
+        val = `${headerText}${val}`;
+      }
+      if (!val.includes('පිළිතුරු (Reply) නොඑවන්න') && !val.includes('Reply නොඑවන්න')) {
+        val = `${val}${noticeText}`;
+      }
+      messageText.value = val;
+      messageText.focus();
+    });
+  }
+
+  // --- Scheduled Messages UI Wiring ---
+  const enableSchedule = document.getElementById('enableSchedule');
+  const scheduleTimeContainer = document.getElementById('scheduleTimeContainer');
+  const scheduleDateTime = document.getElementById('scheduleDateTime');
+  const btnViewScheduled = document.getElementById('btnViewScheduled');
+  const scheduledBadgeCount = document.getElementById('scheduledBadgeCount');
+  const scheduledModal = document.getElementById('scheduledModal');
+  const closeScheduledModalBtn = document.getElementById('closeScheduledModalBtn');
+  const closeScheduledModalBtn2 = document.getElementById('closeScheduledModalBtn2');
+  const refreshScheduledBtn = document.getElementById('refreshScheduledBtn');
+  const scheduledItemsList = document.getElementById('scheduledItemsList');
+
+  if (enableSchedule) {
+    enableSchedule.addEventListener('change', () => {
+      if (enableSchedule.checked) {
+        scheduleTimeContainer.style.display = 'block';
+        if (!scheduleDateTime.value) {
+          const nextHour = new Date(Date.now() + 60 * 60 * 1000);
+          nextHour.setMinutes(0, 0, 0);
+          const tzOffset = nextHour.getTimezoneOffset() * 60000;
+          const localISOTime = (new Date(nextHour.getTime() - tzOffset)).toISOString().slice(0, 16);
+          scheduleDateTime.value = localISOTime;
+        }
+      } else {
+        scheduleTimeContainer.style.display = 'none';
+      }
+      updateSendButtonState();
+    });
+  }
+
+  if (btnViewScheduled) {
+    btnViewScheduled.addEventListener('click', () => {
+      loadScheduledMessages();
+      scheduledModal.classList.add('active');
+    });
+  }
+  if (closeScheduledModalBtn) {
+    closeScheduledModalBtn.addEventListener('click', () => scheduledModal.classList.remove('active'));
+  }
+  if (closeScheduledModalBtn2) {
+    closeScheduledModalBtn2.addEventListener('click', () => scheduledModal.classList.remove('active'));
+  }
+  if (refreshScheduledBtn) {
+    refreshScheduledBtn.addEventListener('click', loadScheduledMessages);
+  }
+
+  async function updateScheduledBadge() {
+    if (!authToken) return;
+    try {
+      const res = await authFetch('/api/scheduled');
+      if (res.ok) {
+        const list = await res.json();
+        const pendingCount = list.filter(i => i.status === 'PENDING').length;
+        if (scheduledBadgeCount) scheduledBadgeCount.textContent = pendingCount;
+      }
+    } catch (e) {}
+  }
+
+  async function loadScheduledMessages() {
+    if (!scheduledItemsList) return;
+    scheduledItemsList.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 25px;"><i class="fa-solid fa-circle-notch fa-spin"></i> Loading scheduled messages...</div>`;
+
+    try {
+      const res = await authFetch('/api/scheduled');
+      const list = await res.json();
+      const pendingCount = list.filter(i => i.status === 'PENDING').length;
+      if (scheduledBadgeCount) scheduledBadgeCount.textContent = pendingCount;
+
+      if (!Array.isArray(list) || list.length === 0) {
+        scheduledItemsList.innerHTML = `
+          <div style="text-align: center; color: var(--text-muted); padding: 30px;">
+            <i class="fa-regular fa-calendar-xmark" style="font-size: 2.2rem; color: #cbd5e1; margin-bottom: 8px; display: block;"></i>
+            No scheduled messages found. (කලින් සැකසූ පණිවිඩ නොමැත)
+          </div>
+        `;
+        return;
+      }
+
+      scheduledItemsList.innerHTML = list.map(item => {
+        const isPending = item.status === 'PENDING';
+        const targetDate = new Date(item.scheduledAt);
+        const formattedDate = targetDate.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+        const formattedTime = targetDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        let statusBadge = `<span class="badge" style="background: #fef3c7; color: #92400e; font-size: 0.72rem;"><i class="fa-solid fa-clock"></i> PENDING</span>`;
+        if (item.status === 'SENT') {
+          statusBadge = `<span class="badge" style="background: #dcfce7; color: #166534; font-size: 0.72rem;"><i class="fa-solid fa-check-double"></i> SENT</span>`;
+        } else if (item.status === 'FAILED') {
+          statusBadge = `<span class="badge" style="background: #fee2e2; color: #991b1b; font-size: 0.72rem;"><i class="fa-solid fa-triangle-exclamation"></i> FAILED</span>`;
+        }
+
+        const senderBadge = item.sentBy
+          ? `<span class="badge" style="background: #eff6ff; color: #1e40af; font-size: 0.72rem;"><i class="fa-solid fa-building-columns"></i> ${item.sentBy.name || item.sentBy.username}</span>`
+          : '';
+
+        return `
+          <div class="scheduled-card" style="border: 1px solid ${isPending ? '#86efac' : 'var(--border-color)'}; background: ${isPending ? '#f0fdf4' : '#fff'}; border-radius: 8px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;">
+            <div style="flex: 1; min-width: 0;">
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px;">
+                ${statusBadge}
+                ${senderBadge}
+                <strong>${item.recipientName}</strong>
+                ${item.phone ? `<span style="font-size: 0.78rem; color: var(--text-muted);">(${item.phone})</span>` : ''}
+              </div>
+              <div style="font-size: 0.84rem; font-weight: 600; color: #15803d; margin-bottom: 4px;">
+                <i class="fa-solid fa-calendar-day"></i> Scheduled: ${formattedDate} at ${formattedTime}
+              </div>
+              <div style="font-size: 0.8rem; color: var(--text-muted); max-height: 48px; overflow: hidden; text-overflow: ellipsis; white-space: pre-wrap;">
+                ${item.message.slice(0, 140)}${item.message.length > 140 ? '...' : ''}
+              </div>
+              ${item.attachment ? `<div style="font-size: 0.74rem; color: #2563eb; margin-top: 4px;"><i class="fa-solid fa-paperclip"></i> Photo/Attachment Included</div>` : ''}
+            </div>
+            ${isPending ? `
+              <button type="button" class="btn btn-sm btn-outline-danger cancel-sched-btn" data-id="${item.id}" style="padding: 4px 8px; font-size: 0.76rem;" title="Cancel Scheduled Dispatch">
+                <i class="fa-solid fa-xmark"></i> Cancel
+              </button>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+
+      document.querySelectorAll('.cancel-sched-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const id = e.currentTarget.getAttribute('data-id');
+          if (confirm('Are you sure you want to cancel this scheduled message?')) {
+            const delRes = await authFetch(`/api/scheduled/${id}`, { method: 'DELETE' });
+            if (delRes.ok) {
+              showToast('Scheduled message cancelled.', 'info');
+              loadScheduledMessages();
+            } else {
+              showToast('Failed to cancel scheduled message.', 'error');
+            }
+          }
+        });
+      });
+
+    } catch (e) {
+      scheduledItemsList.innerHTML = `<div style="color: #ef4444; padding: 10px;">Failed to load scheduled messages.</div>`;
+    }
+  }
+
+  setInterval(updateScheduledBadge, 30 * 1000);
 
   // --- 4. File Attachment Upload Handler ---
   imageUpload.addEventListener('change', (e) => {
@@ -713,17 +938,96 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    // Format Official Bandarawela DS Heading
+    let secTag = '';
+    if (currentUser && currentUser.name && currentUser.role !== 'admin') {
+      secTag = `\n📂 *අංශය:* ${currentUser.name}`;
+    }
+    const officialHeader = `━━━━━━━━━━━━━━━━━━━━\n🏛️ *ප්‍රාදේශීය ලේකම් කාර්යාලය - බණ්ඩාරවෙල*\n*(Divisional Secretariat - Bandarawela)*${secTag}\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+    // Highlighted 'Do Not Reply' Notice
+    const noReplyDisclaimer = `\n\n━━━━━━━━━━━━━━━━━━━━\n⚠️ *විශේෂ දැනුම්දීමයි:*\n*කරුණාකර මෙම පණිවිඩයට පිළිතුරු (Reply) නොඑවන්න.*\n*(Please DO NOT reply to this message)*\n━━━━━━━━━━━━━━━━━━━━`;
+
+    // Only Admin can untick notice; For all other users (sections) it is permanently MANDATORY!
+    const isAdmin = currentUser && currentUser.role === 'admin';
+    const includeNotice = !isAdmin || document.getElementById('includeDoNotReply')?.checked;
+
+    let messageToSend = text;
+
+    // Attach Official Heading if not already present
+    if (messageToSend && !messageToSend.includes('ප්‍රාදේශීය ලේකම් කාර්යාලය - බණ්ඩාරවෙල')) {
+      messageToSend = `${officialHeader}${messageToSend}`;
+    }
+
+    // Attach 'Do Not Reply' Notice if enabled / mandatory
+    if (includeNotice) {
+      const alreadyHasNotice = messageToSend.includes('පිළිතුරු (Reply) නොඑවන්න') || 
+                               messageToSend.includes('Reply නොඑවන්න') || 
+                               messageToSend.includes('DO NOT reply') ||
+                               messageToSend.includes('Do not reply');
+      if (!alreadyHasNotice) {
+        messageToSend = messageToSend ? `${messageToSend}${noReplyDisclaimer}` : `${officialHeader.trim()}${noReplyDisclaimer}`;
+      }
+    } else if (!messageToSend && file) {
+      messageToSend = `${officialHeader.trim()}`;
+    }
+
     const count = selectedMap.size;
     const isBulk = count > 1;
+    const isScheduled = enableSchedule && enableSchedule.checked;
+    let scheduledIso = null;
+
+    if (isScheduled) {
+      if (!scheduleDateTime || !scheduleDateTime.value) {
+        showToast('Please select a scheduled date and time.', 'error');
+        return;
+      }
+      const targetTime = new Date(scheduleDateTime.value).getTime();
+      if (isNaN(targetTime) || targetTime <= Date.now()) {
+        showToast('Scheduled date & time must be in the future.', 'error');
+        return;
+      }
+      scheduledIso = new Date(scheduleDateTime.value).toISOString();
+    }
 
     sendBtn.setAttribute('disabled', 'true');
-    sendBtn.innerHTML = isBulk
-      ? `<i class="fa-solid fa-circle-notch fa-spin"></i> Dispatched bulk messages...`
-      : `<i class="fa-solid fa-circle-notch fa-spin"></i> Sending via WhatsApp...`;
+    sendBtn.innerHTML = isScheduled
+      ? `<i class="fa-solid fa-circle-notch fa-spin"></i> Scheduling message...`
+      : (isBulk
+          ? `<i class="fa-solid fa-circle-notch fa-spin"></i> Dispatched bulk messages...`
+          : `<i class="fa-solid fa-circle-notch fa-spin"></i> Sending via WhatsApp...`);
 
     try {
       let res, data;
-      if (isBulk) {
+      if (isScheduled) {
+        const formData = new FormData();
+        formData.append('scheduledAt', scheduledIso);
+        formData.append('message', messageToSend);
+        if (file) formData.append('attachment', file);
+
+        if (isBulk) {
+          const recipientsArray = Array.from(selectedMap.values()).map(r => ({
+            id: r.id,
+            name: r.name,
+            phone: r.phone,
+            fileNo: r.fileNo || ''
+          }));
+          formData.append('isBulk', 'true');
+          formData.append('recipients', JSON.stringify(recipientsArray));
+        } else {
+          const singleRecipient = Array.from(selectedMap.values())[0];
+          formData.append('isBulk', 'false');
+          formData.append('officerId', singleRecipient.id || '');
+          formData.append('phone', singleRecipient.phone);
+          formData.append('recipientName', singleRecipient.name);
+        }
+
+        res = await authFetch('/api/schedule', {
+          method: 'POST',
+          body: formData
+        });
+        data = await res.json();
+      } else if (isBulk) {
         const recipientsArray = Array.from(selectedMap.values()).map(r => ({
           id: r.id,
           name: r.name,
@@ -733,7 +1037,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const formData = new FormData();
         formData.append('recipients', JSON.stringify(recipientsArray));
-        formData.append('message', text);
+        formData.append('message', messageToSend);
         if (file) formData.append('attachment', file);
 
         res = await authFetch('/api/send-bulk', {
@@ -746,7 +1050,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData();
         formData.append('officerId', singleRecipient.id);
         formData.append('phone', singleRecipient.phone);
-        formData.append('message', text);
+        formData.append('message', messageToSend);
         if (file) formData.append('attachment', file);
 
         res = await authFetch('/api/send', {
@@ -757,18 +1061,23 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       if (res.ok && data.success) {
-        showToast(data.message || `Message sent successfully!`, 'success');
+        showToast(data.message || `Action completed successfully!`, 'success');
         messageText.value = '';
         removeFileBtn.click();
         selectedMap.clear();
         updateSelectionUI();
+        if (enableSchedule) {
+          enableSchedule.checked = false;
+          scheduleTimeContainer.style.display = 'none';
+        }
+        updateScheduledBadge();
         loadHistory();
       } else {
-        showToast(data.error || 'Failed to send WhatsApp message.', 'error');
+        showToast(data.error || 'Failed to dispatch message.', 'error');
       }
     } catch (err) {
       console.error('Send error:', err);
-      showToast('Network error sending message.', 'error');
+      showToast('Network error processing request.', 'error');
     } finally {
       updateSendButtonState();
     }
