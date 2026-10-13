@@ -266,6 +266,105 @@ app.post('/api/change-password', requireAuth, (req, res) => {
   res.json({ success: true, message: 'Password updated successfully!' });
 });
 
+// List Sections (Lightweight for dropdowns and filters)
+app.get('/api/sections', (req, res) => {
+  const users = readJSON(USERS_FILE, []);
+  const sections = users.map(u => ({
+    id: u.id,
+    username: u.username,
+    name: u.name,
+    role: u.role
+  }));
+  res.json(sections);
+});
+
+// User / Section Management (Admin Only)
+app.get('/api/users', requireAuth, (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Access denied. Administrator privileges required.' });
+  }
+  const users = readJSON(USERS_FILE, []);
+  res.json(users);
+});
+
+app.post('/api/users', requireAuth, (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Access denied. Administrator privileges required.' });
+  }
+  const { username, password, name, role } = req.body;
+  if (!username || !password || !name) {
+    return res.status(400).json({ error: 'Username, password and section name are required.' });
+  }
+
+  const cleanUser = username.toLowerCase().trim();
+  const users = readJSON(USERS_FILE, []);
+  if (users.some(u => u.username.toLowerCase().trim() === cleanUser)) {
+    return res.status(400).json({ error: 'Username already exists. Please choose a different username.' });
+  }
+
+  const newUser = {
+    id: 'usr_' + Date.now(),
+    username: cleanUser,
+    password: password.trim(),
+    name: name.trim(),
+    role: role || 'section_user'
+  };
+
+  users.push(newUser);
+  writeJSON(USERS_FILE, users);
+  res.json({ success: true, message: 'Section account created successfully!', user: newUser });
+});
+
+app.put('/api/users/:id', requireAuth, (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Access denied. Administrator privileges required.' });
+  }
+  const { id } = req.params;
+  const { username, password, name, role } = req.body;
+
+  const users = readJSON(USERS_FILE, []);
+  const uIndex = users.findIndex(u => u.id === id);
+  if (uIndex === -1) {
+    return res.status(404).json({ error: 'Section account not found.' });
+  }
+
+  if (username) {
+    const cleanUser = username.toLowerCase().trim();
+    if (users.some(u => u.id !== id && u.username.toLowerCase().trim() === cleanUser)) {
+      return res.status(400).json({ error: 'Username already in use by another account.' });
+    }
+    users[uIndex].username = cleanUser;
+  }
+
+  if (name) users[uIndex].name = name.trim();
+  if (password && password.trim()) users[uIndex].password = password.trim();
+  if (role && id !== 'usr_1') users[uIndex].role = role;
+
+  writeJSON(USERS_FILE, users);
+  res.json({ success: true, message: 'Section account updated successfully!', user: users[uIndex] });
+});
+
+app.delete('/api/users/:id', requireAuth, (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Access denied. Administrator privileges required.' });
+  }
+  const { id } = req.params;
+  if (id === 'usr_1' || id === req.user.id) {
+    return res.status(400).json({ error: 'Main Administrator account cannot be deleted.' });
+  }
+
+  let users = readJSON(USERS_FILE, []);
+  const beforeCount = users.length;
+  users = users.filter(u => u.id !== id);
+
+  if (users.length === beforeCount) {
+    return res.status(404).json({ error: 'Section account not found.' });
+  }
+
+  writeJSON(USERS_FILE, users);
+  res.json({ success: true, message: 'Section account removed successfully!' });
+});
+
 // --- API ENDPOINTS ---
 
 // WhatsApp Connection Status
@@ -503,7 +602,13 @@ app.post('/api/send', requireAuth, upload.single('attachment'), async (req, res)
       message: message || '',
       attachment: attachmentUrl,
       timestamp: new Date().toISOString(),
-      status: 'SENT'
+      status: 'SENT',
+      sentBy: {
+        id: req.user.id,
+        username: req.user.username,
+        name: req.user.name,
+        role: req.user.role
+      }
     };
     history.unshift(newLog);
     writeJSON(HISTORY_FILE, history);
@@ -594,7 +699,13 @@ app.post('/api/send-bulk', requireAuth, upload.single('attachment'), async (req,
         message: finalMessage,
         attachment: attachmentUrl,
         timestamp: new Date().toISOString(),
-        status: 'SENT'
+        status: 'SENT',
+        sentBy: {
+          id: req.user.id,
+          username: req.user.username,
+          name: req.user.name,
+          role: req.user.role
+        }
       };
       history.unshift(log);
       newLogs.push(log);
@@ -619,10 +730,38 @@ app.post('/api/send-bulk', requireAuth, upload.single('attachment'), async (req,
   });
 });
 
-// Message History
-app.get('/api/history', (req, res) => {
+// Message History with Section Tracking
+app.get('/api/history', requireAuth, (req, res) => {
   const history = readJSON(HISTORY_FILE, []);
-  res.json(history);
+  const { section, q } = req.query;
+
+  let result = history;
+
+  if (req.user.role === 'admin') {
+    // Admin can view all, or filter by specific section username
+    if (section && section !== 'all') {
+      result = result.filter(item =>
+        item.sentBy && (item.sentBy.username === section || item.sentBy.role === section)
+      );
+    }
+  } else {
+    // Section accounts: view their own section's history
+    result = result.filter(item =>
+      item.sentBy && item.sentBy.username === req.user.username
+    );
+  }
+
+  if (q) {
+    const query = q.toLowerCase().trim();
+    result = result.filter(item =>
+      (item.officerName && item.officerName.toLowerCase().includes(query)) ||
+      (item.phone && item.phone.includes(query)) ||
+      (item.message && item.message.toLowerCase().includes(query)) ||
+      (item.sentBy && item.sentBy.name && item.sentBy.name.toLowerCase().includes(query))
+    );
+  }
+
+  res.json(result);
 });
 
 // Clear All Message History (Admin Only)
