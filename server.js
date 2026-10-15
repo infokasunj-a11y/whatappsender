@@ -41,7 +41,7 @@ app.use((req, res, next) => {
 });
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Multer Upload configuration
+// Multer Upload configuration (Multiple Photos & PDF Documents, max 30MB each, up to 10 files)
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadsDir),
   filename: (req, file, cb) => {
@@ -50,7 +50,81 @@ const storage = multer.diskStorage({
     cb(null, 'upload-' + uniqueSuffix + ext);
   }
 });
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: { fileSize: 30 * 1024 * 1024 } // 30MB per file
+});
+const uploadMiddleware = upload.fields([
+  { name: 'attachments', maxCount: 10 },
+  { name: 'attachment', maxCount: 1 }
+]);
+
+function extractUploadedFiles(req) {
+  let list = [];
+  if (req.files) {
+    if (Array.isArray(req.files.attachments)) list = list.concat(req.files.attachments);
+    if (Array.isArray(req.files.attachment)) list = list.concat(req.files.attachment);
+    if (Array.isArray(req.files)) list = list.concat(req.files);
+  }
+  if (req.file) list.push(req.file);
+  return list;
+}
+
+// Reusable Baileys Dispatcher for Text, Multiple Images, and PDF / Documents
+async function sendBaileysMessageWithAttachments(jid, textMessage, files = []) {
+  if (!files || files.length === 0) {
+    return await sock.sendMessage(jid, { text: textMessage || '' });
+  }
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    let mediaPath = '';
+    let mimetype = file.mimetype || 'application/octet-stream';
+    let originalName = file.originalname || 'document';
+
+    if (file.path) {
+      mediaPath = file.path;
+    } else if (file.filename) {
+      mediaPath = path.join(uploadsDir, file.filename);
+    } else if (typeof file === 'string') {
+      mediaPath = path.join(__dirname, 'public', file);
+    } else if (file.url) {
+      mediaPath = path.join(__dirname, 'public', file.url);
+    }
+
+    if (!fs.existsSync(mediaPath)) {
+      console.error('Attachment file not found at:', mediaPath);
+      continue;
+    }
+
+    const fileBuffer = fs.readFileSync(mediaPath);
+    const ext = path.extname(mediaPath).toLowerCase();
+    const isImage = mimetype.startsWith('image/') || ['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(ext);
+    const caption = (i === 0) ? (textMessage || '') : '';
+
+    if (isImage) {
+      await sock.sendMessage(jid, {
+        image: fileBuffer,
+        caption: caption,
+        mimetype: mimetype.startsWith('image/') ? mimetype : 'image/jpeg'
+      });
+    } else {
+      // PDF or Document
+      const docMime = ext === '.pdf' ? 'application/pdf' : mimetype;
+      const cleanFileName = originalName && originalName.endsWith(ext) ? originalName : (originalName + ext);
+      await sock.sendMessage(jid, {
+        document: fileBuffer,
+        fileName: cleanFileName,
+        mimetype: docMime,
+        caption: caption
+      });
+    }
+
+    if (i < files.length - 1) {
+      await new Promise(r => setTimeout(r, 1200)); // 1.2s delay between multiple files
+    }
+  }
+}
 
 const crypto = require('crypto');
 
@@ -550,8 +624,8 @@ app.delete('/api/customers/:id', requireAuth, (req, res) => {
   res.json({ success: true, message: 'Customer record deleted.' });
 });
 
-// Send Message / Image via WhatsApp (Baileys Engine)
-app.post('/api/send', requireAuth, upload.single('attachment'), async (req, res) => {
+// Send Message / Multiple Images / PDF Documents via WhatsApp (Baileys Engine)
+app.post('/api/send', requireAuth, uploadMiddleware, async (req, res) => {
   if (whatsappStatus !== 'ready' || !sock) {
     return res.status(400).json({
       error: 'WhatsApp is not ready. Please scan the QR code to connect.'
@@ -559,11 +633,13 @@ app.post('/api/send', requireAuth, upload.single('attachment'), async (req, res)
   }
 
   const { officerId, phone, message } = req.body;
+  const files = extractUploadedFiles(req);
+
   if (!phone) {
     return res.status(400).json({ error: 'Phone number is required.' });
   }
-  if (!message && !req.file) {
-    return res.status(400).json({ error: 'Message content or image attachment is required.' });
+  if (!message && files.length === 0) {
+    return res.status(400).json({ error: 'Message content or at least one attachment is required.' });
   }
 
   const jid = await resolveJid(phone);
@@ -576,25 +652,10 @@ app.post('/api/send', requireAuth, upload.single('attachment'), async (req, res)
   }
 
   try {
-    let attachmentUrl = null;
+    // Send text / multiple images / PDF documents sequentially
+    await sendBaileysMessageWithAttachments(jid, message, files);
 
-    if (req.file) {
-      attachmentUrl = '/uploads/' + req.file.filename;
-      const mediaPath = path.join(uploadsDir, req.file.filename);
-      const fileBuffer = fs.readFileSync(mediaPath);
-
-      // Send Image via Baileys
-      await sock.sendMessage(jid, {
-        image: fileBuffer,
-        caption: message || '',
-        mimetype: req.file.mimetype || 'image/jpeg'
-      });
-    } else {
-      // Send Text Message via Baileys
-      await sock.sendMessage(jid, {
-        text: message
-      });
-    }
+    const attachmentsList = files.map(f => '/uploads/' + f.filename);
 
     // Save history log
     const history = readJSON(HISTORY_FILE, []);
@@ -604,7 +665,8 @@ app.post('/api/send', requireAuth, upload.single('attachment'), async (req, res)
       officerName,
       phone,
       message: message || '',
-      attachment: attachmentUrl,
+      attachment: attachmentsList.length > 0 ? attachmentsList[0] : null,
+      attachments: attachmentsList,
       timestamp: new Date().toISOString(),
       status: 'SENT',
       sentBy: {
@@ -627,8 +689,8 @@ app.post('/api/send', requireAuth, upload.single('attachment'), async (req, res)
   }
 });
 
-// Send Bulk WhatsApp Messages
-app.post('/api/send-bulk', requireAuth, upload.single('attachment'), async (req, res) => {
+// Send Bulk WhatsApp Messages (Multiple Images & PDF Documents supported)
+app.post('/api/send-bulk', requireAuth, uploadMiddleware, async (req, res) => {
   if (whatsappStatus !== 'ready' || !sock) {
     return res.status(400).json({
       error: 'WhatsApp is not ready. Please scan the QR code to connect.'
@@ -647,21 +709,13 @@ app.post('/api/send-bulk', requireAuth, upload.single('attachment'), async (req,
   }
 
   const { message } = req.body;
-  if (!message && !req.file) {
-    return res.status(400).json({ error: 'Message content or image attachment is required.' });
+  const files = extractUploadedFiles(req);
+
+  if (!message && files.length === 0) {
+    return res.status(400).json({ error: 'Message content or at least one attachment is required.' });
   }
 
-  let attachmentUrl = null;
-  let fileBuffer = null;
-  let mimetype = 'image/jpeg';
-
-  if (req.file) {
-    attachmentUrl = '/uploads/' + req.file.filename;
-    const mediaPath = path.join(uploadsDir, req.file.filename);
-    fileBuffer = fs.readFileSync(mediaPath);
-    mimetype = req.file.mimetype || 'image/jpeg';
-  }
-
+  const attachmentsList = files.map(f => '/uploads/' + f.filename);
   const history = readJSON(HISTORY_FILE, []);
   let sentCount = 0;
   let failedCount = 0;
@@ -684,15 +738,7 @@ app.post('/api/send-bulk', requireAuth, upload.single('attachment'), async (req,
         finalMessage = finalMessage.replace(/\{fileNo\}/g, item.fileNo);
       }
 
-      if (fileBuffer) {
-        await sock.sendMessage(jid, {
-          image: fileBuffer,
-          caption: finalMessage,
-          mimetype
-        });
-      } else {
-        await sock.sendMessage(jid, { text: finalMessage });
-      }
+      await sendBaileysMessageWithAttachments(jid, finalMessage, files);
 
       sentCount++;
       const log = {
@@ -701,7 +747,8 @@ app.post('/api/send-bulk', requireAuth, upload.single('attachment'), async (req,
         officerName: item.name || 'Recipient',
         phone: item.phone,
         message: finalMessage,
-        attachment: attachmentUrl,
+        attachment: attachmentsList.length > 0 ? attachmentsList[0] : null,
+        attachments: attachmentsList,
         timestamp: new Date().toISOString(),
         status: 'SENT',
         sentBy: {
@@ -736,9 +783,10 @@ app.post('/api/send-bulk', requireAuth, upload.single('attachment'), async (req,
 
 // --- SCHEDULED MESSAGES SYSTEM ---
 
-// 1. Create a Scheduled Message (Single or Bulk)
-app.post('/api/schedule', requireAuth, upload.single('attachment'), async (req, res) => {
+// 1. Create a Scheduled Message (Single or Bulk, Multiple Photos & PDFs)
+app.post('/api/schedule', requireAuth, uploadMiddleware, async (req, res) => {
   const { scheduledAt, isBulk, recipients, officerId, phone, recipientName, message } = req.body;
+  const files = extractUploadedFiles(req);
 
   if (!scheduledAt) {
     return res.status(400).json({ error: 'Scheduled date & time is required.' });
@@ -753,8 +801,8 @@ app.post('/api/schedule', requireAuth, upload.single('attachment'), async (req, 
     return res.status(400).json({ error: 'Scheduled time must be in the future.' });
   }
 
-  if (!message && !req.file) {
-    return res.status(400).json({ error: 'Message content or image attachment is required.' });
+  if (!message && files.length === 0) {
+    return res.status(400).json({ error: 'Message content or at least one attachment is required.' });
   }
 
   const isBulkBool = isBulk === 'true' || isBulk === true;
@@ -774,10 +822,12 @@ app.post('/api/schedule', requireAuth, upload.single('attachment'), async (req, 
     }
   }
 
-  let attachmentUrl = null;
-  if (req.file) {
-    attachmentUrl = '/uploads/' + req.file.filename;
-  }
+  const attachmentsData = files.map(f => ({
+    url: '/uploads/' + f.filename,
+    filename: f.filename,
+    originalname: f.originalname,
+    mimetype: f.mimetype
+  }));
 
   const scheduledList = readJSON(SCHEDULED_FILE, []);
   const newScheduleItem = {
@@ -788,7 +838,8 @@ app.post('/api/schedule', requireAuth, upload.single('attachment'), async (req, 
     phone: isBulkBool ? null : phone,
     recipientName: isBulkBool ? `${parsedRecipients.length} Recipients (Bulk)` : (recipientName || 'Recipient'),
     message: message || '',
-    attachment: attachmentUrl,
+    attachment: attachmentsData.length > 0 ? attachmentsData[0].url : null,
+    attachments: attachmentsData,
     scheduledAt: targetDate.toISOString(),
     createdAt: new Date().toISOString(),
     status: 'PENDING',
@@ -862,14 +913,9 @@ async function processScheduledQueue() {
         console.log(`[Scheduler] Dispatching scheduled item: ${item.id} (Scheduled for: ${item.scheduledAt})`);
         
         try {
-          let attachmentBuffer = null;
-          let mimetype = 'image/jpeg';
-          if (item.attachment) {
-            const mediaPath = path.join(__dirname, 'public', item.attachment);
-            if (fs.existsSync(mediaPath)) {
-              attachmentBuffer = fs.readFileSync(mediaPath);
-            }
-          }
+          const filesToSend = (item.attachments && item.attachments.length > 0)
+            ? item.attachments
+            : (item.attachment ? [{ url: item.attachment, filename: path.basename(item.attachment), originalname: path.basename(item.attachment) }] : []);
 
           if (item.isBulk && Array.isArray(item.recipients)) {
             // Bulk dispatch
@@ -882,11 +928,7 @@ async function processScheduledQueue() {
                 if (rec.name && finalMsg.includes('{name}')) finalMsg = finalMsg.replace(/\{name\}/g, rec.name);
                 if (rec.fileNo && finalMsg.includes('{fileNo}')) finalMsg = finalMsg.replace(/\{fileNo\}/g, rec.fileNo);
 
-                if (attachmentBuffer) {
-                  await sock.sendMessage(jid, { image: attachmentBuffer, caption: finalMsg, mimetype });
-                } else {
-                  await sock.sendMessage(jid, { text: finalMsg });
-                }
+                await sendBaileysMessageWithAttachments(jid, finalMsg, filesToSend);
 
                 const history = readJSON(HISTORY_FILE, []);
                 history.unshift({
@@ -895,7 +937,8 @@ async function processScheduledQueue() {
                   officerName: rec.name || 'Recipient',
                   phone: rec.phone,
                   message: finalMsg,
-                  attachment: item.attachment || null,
+                  attachment: filesToSend.length > 0 ? (filesToSend[0].url || filesToSend[0].filename) : null,
+                  attachments: filesToSend.map(f => f.url || f.filename),
                   timestamp: new Date().toISOString(),
                   status: 'SENT',
                   scheduledFrom: item.id,
@@ -913,11 +956,7 @@ async function processScheduledQueue() {
           } else {
             // Single dispatch
             const jid = await resolveJid(item.phone);
-            if (attachmentBuffer) {
-              await sock.sendMessage(jid, { image: attachmentBuffer, caption: item.message || '', mimetype });
-            } else {
-              await sock.sendMessage(jid, { text: item.message });
-            }
+            await sendBaileysMessageWithAttachments(jid, item.message, filesToSend);
 
             const history = readJSON(HISTORY_FILE, []);
             history.unshift({
@@ -926,7 +965,8 @@ async function processScheduledQueue() {
               officerName: item.recipientName || 'Recipient',
               phone: item.phone,
               message: item.message || '',
-              attachment: item.attachment || null,
+              attachment: filesToSend.length > 0 ? (filesToSend[0].url || filesToSend[0].filename) : null,
+              attachments: filesToSend.map(f => f.url || f.filename),
               timestamp: new Date().toISOString(),
               status: 'SENT',
               scheduledFrom: item.id,
