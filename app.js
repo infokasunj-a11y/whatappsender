@@ -6,6 +6,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const logoutBtn = document.getElementById('logoutBtn');
   const qrBanner = document.getElementById('qrBanner');
   const qrCodeImg = document.getElementById('qrCodeImg');
+  const btnShowQr = document.getElementById('btnShowQr');
+  const btnRefreshQr = document.getElementById('btnRefreshQr');
+  const qrLoadingSpinner = document.getElementById('qrLoadingSpinner');
+  const qrStatusHelp = document.getElementById('qrStatusHelp');
 
   const tabOfficersBtn = document.getElementById('tabOfficersBtn');
   const tabCustomersBtn = document.getElementById('tabCustomersBtn');
@@ -24,11 +28,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const messageForm = document.getElementById('messageForm');
   const messageText = document.getElementById('messageText');
-  const imageUpload = document.getElementById('imageUpload');
+  const fileUploadInput = document.getElementById('fileUploadInput') || document.getElementById('imageUpload');
+  const fileDropZone = document.getElementById('fileDropZone');
   const uploadPlaceholder = document.getElementById('uploadPlaceholder');
-  const uploadPreview = document.getElementById('uploadPreview');
-  const previewImg = document.getElementById('previewImg');
-  const removeFileBtn = document.getElementById('removeFileBtn');
+  const multiFilesPreview = document.getElementById('multiFilesPreview');
+  const filesListGrid = document.getElementById('filesListGrid');
+  const clearAllFilesBtn = document.getElementById('clearAllFilesBtn');
+  const attachedFilesBadge = document.getElementById('attachedFilesBadge');
+  const previewCount = document.getElementById('previewCount');
   const sendBtn = document.getElementById('sendBtn');
   const historyList = document.getElementById('historyList');
 
@@ -313,6 +320,49 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // --- 1. WhatsApp Connection Polling ---
+  let isRefreshingQr = false;
+
+  async function triggerQrRefresh() {
+    if (isRefreshingQr) return;
+    isRefreshingQr = true;
+    if (btnRefreshQr) {
+      btnRefreshQr.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Refreshing...`;
+      btnRefreshQr.disabled = true;
+    }
+    if (qrLoadingSpinner) qrLoadingSpinner.style.display = 'flex';
+    if (qrCodeImg) qrCodeImg.style.display = 'none';
+
+    try {
+      await fetch('/api/whatsapp/reconnect', { method: 'POST' });
+      showToast('Reconnecting WhatsApp engine... Please scan the new QR code.', 'info');
+      setTimeout(checkWhatsAppStatus, 1500);
+    } catch (e) {
+      showToast('Error requesting QR refresh.', 'error');
+    } finally {
+      setTimeout(() => {
+        isRefreshingQr = false;
+        if (btnRefreshQr) {
+          btnRefreshQr.innerHTML = `<i class="fa-solid fa-arrows-rotate"></i> Refresh QR Code (අලුත් කරන්න)`;
+          btnRefreshQr.disabled = false;
+        }
+      }, 2000);
+    }
+  }
+
+  if (btnRefreshQr) {
+    btnRefreshQr.addEventListener('click', triggerQrRefresh);
+  }
+
+  if (btnShowQr) {
+    btnShowQr.addEventListener('click', () => {
+      if (qrBanner) {
+        qrBanner.style.display = 'block';
+        qrBanner.scrollIntoView({ behavior: 'smooth' });
+      }
+      triggerQrRefresh();
+    });
+  }
+
   async function checkWhatsAppStatus() {
     try {
       const res = await fetch('/api/status');
@@ -323,41 +373,57 @@ document.addEventListener('DOMContentLoaded', () => {
         statusDot.className = 'status-indicator-dot online';
         statusTitle.textContent = 'WhatsApp Connected';
         statusSub.textContent = data.info ? `Online as +${data.info.wid}` : 'Ready to send messages';
-        qrBanner.style.display = 'none';
+        if (qrBanner) qrBanner.style.display = 'none';
+        if (btnShowQr) btnShowQr.style.display = 'none';
         
         // Disconnect button only visible to Admin
         const isAdmin = currentUser && currentUser.role === 'admin';
-        logoutBtn.style.display = isAdmin ? 'inline-flex' : 'none';
+        if (logoutBtn) logoutBtn.style.display = isAdmin ? 'inline-flex' : 'none';
         
         updateSendButtonState();
       } else if (data.status === 'qr' && data.qrCode) {
         isWhatsAppReady = false;
         statusDot.className = 'status-indicator-dot warning';
         statusTitle.textContent = 'Scan QR Code';
-        statusSub.textContent = 'Link office WhatsApp phone';
-        qrCodeImg.src = data.qrCode;
-        qrBanner.style.display = 'block';
-        logoutBtn.style.display = 'none';
+        statusSub.textContent = 'Waiting for WhatsApp scan...';
+        if (qrCodeImg) {
+          qrCodeImg.src = data.qrCode;
+          qrCodeImg.style.display = 'block';
+        }
+        if (qrLoadingSpinner) qrLoadingSpinner.style.display = 'none';
+        if (qrBanner) qrBanner.style.display = 'block';
+        if (btnShowQr) btnShowQr.style.display = 'none';
+        if (logoutBtn) logoutBtn.style.display = 'none';
         updateSendButtonState();
       } else if (data.status === 'authenticated') {
         isWhatsAppReady = false;
         statusDot.className = 'status-indicator-dot warning';
         statusTitle.textContent = 'Authenticating...';
-        statusSub.textContent = 'Loading chats and session';
-        qrBanner.style.display = 'none';
-        logoutBtn.style.display = 'none';
+        statusSub.textContent = 'Loading chats and session...';
+        if (qrLoadingSpinner) qrLoadingSpinner.style.display = 'flex';
+        if (qrCodeImg) qrCodeImg.style.display = 'none';
+        if (qrBanner) qrBanner.style.display = 'block';
+        if (btnShowQr) btnShowQr.style.display = 'none';
+        if (logoutBtn) logoutBtn.style.display = 'none';
         updateSendButtonState();
       } else {
+        // initializing, connecting, or disconnected
         isWhatsAppReady = false;
-        statusDot.className = 'status-indicator-dot';
-        statusTitle.textContent = 'Disconnected';
-        statusSub.textContent = 'Initializing WhatsApp...';
-        qrBanner.style.display = 'none';
-        logoutBtn.style.display = 'none';
+        statusDot.className = 'status-indicator-dot warning';
+        statusTitle.textContent = 'Connecting WhatsApp...';
+        statusSub.textContent = 'Generating QR code, please wait...';
+        if (qrBanner) qrBanner.style.display = 'block';
+        if (qrLoadingSpinner) qrLoadingSpinner.style.display = 'flex';
+        if (qrCodeImg) qrCodeImg.style.display = 'none';
+        if (btnShowQr) btnShowQr.style.display = 'inline-flex';
+        if (logoutBtn) logoutBtn.style.display = 'none';
         updateSendButtonState();
       }
     } catch (err) {
-      console.error('Status check error:', err);
+      statusDot.className = 'status-indicator-dot';
+      statusTitle.textContent = 'Server Offline';
+      statusSub.textContent = 'Reconnecting to local server...';
+      if (btnShowQr) btnShowQr.style.display = 'inline-flex';
     }
   }
 
@@ -895,26 +961,149 @@ document.addEventListener('DOMContentLoaded', () => {
 
   setInterval(updateScheduledBadge, 30 * 1000);
 
-  // --- 4. File Attachment Upload Handler ---
-  imageUpload.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        previewImg.src = event.target.result;
-        uploadPlaceholder.style.display = 'none';
-        uploadPreview.style.display = 'block';
-      };
-      reader.readAsDataURL(file);
-    }
-  });
+  // --- 4. Multiple Files & PDF Documents Upload Handler ---
+  let attachedFiles = [];
 
-  removeFileBtn.addEventListener('click', () => {
-    imageUpload.value = '';
-    previewImg.src = '';
-    uploadPlaceholder.style.display = 'flex';
-    uploadPreview.style.display = 'none';
-  });
+  function formatFileSize(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  function renderAttachedFilesUI() {
+    if (!filesListGrid || !multiFilesPreview) return;
+
+    if (attachedFiles.length === 0) {
+      multiFilesPreview.style.display = 'none';
+      if (attachedFilesBadge) attachedFilesBadge.style.display = 'none';
+      filesListGrid.innerHTML = '';
+      if (fileUploadInput) fileUploadInput.value = '';
+      return;
+    }
+
+    multiFilesPreview.style.display = 'block';
+    if (attachedFilesBadge) {
+      attachedFilesBadge.style.display = 'inline-block';
+      attachedFilesBadge.textContent = `${attachedFiles.length} File${attachedFiles.length > 1 ? 's' : ''} Attached`;
+    }
+    if (previewCount) {
+      previewCount.textContent = attachedFiles.length;
+    }
+
+    filesListGrid.innerHTML = '';
+    attachedFiles.forEach((file, index) => {
+      const card = document.createElement('div');
+      card.style.cssText = 'position: relative; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); text-align: center; min-height: 105px;';
+
+      const isImage = file.type.startsWith('image/');
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+
+      let iconOrThumb = '';
+      if (isImage) {
+        const objectUrl = URL.createObjectURL(file);
+        iconOrThumb = `<img src="${objectUrl}" alt="thumb" style="width: 100%; height: 55px; object-fit: cover; border-radius: 4px; margin-bottom: 6px;">`;
+      } else if (isPdf) {
+        iconOrThumb = `<div style="height: 55px; display: flex; align-items: center; justify-content: center; margin-bottom: 6px;"><i class="fa-solid fa-file-pdf" style="font-size: 2.2rem; color: #ef4444;"></i></div>`;
+      } else {
+        iconOrThumb = `<div style="height: 55px; display: flex; align-items: center; justify-content: center; margin-bottom: 6px;"><i class="fa-solid fa-file-lines" style="font-size: 2.2rem; color: #3b82f6;"></i></div>`;
+      }
+
+      const escapedName = file.name.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      card.innerHTML = `
+        <button type="button" class="remove-single-file-btn" data-index="${index}" title="Remove file" style="position: absolute; top: 4px; right: 4px; background: rgba(239, 68, 68, 0.9); color: white; border: none; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 0.7rem; line-height: 1; z-index: 2;">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+        ${iconOrThumb}
+        <div style="width: 100%; font-size: 0.72rem; font-weight: 600; color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${escapedName}">${escapedName}</div>
+        <div style="font-size: 0.68rem; color: #64748b; margin-top: 2px;">${formatFileSize(file.size)}</div>
+      `;
+
+      filesListGrid.appendChild(card);
+    });
+
+    // Add remove listeners
+    filesListGrid.querySelectorAll('.remove-single-file-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.getAttribute('data-index'), 10);
+        if (!isNaN(idx) && idx >= 0 && idx < attachedFiles.length) {
+          attachedFiles.splice(idx, 1);
+          renderAttachedFilesUI();
+        }
+      });
+    });
+  }
+
+  function handleFilesAdded(fileList) {
+    if (!fileList || fileList.length === 0) return;
+
+    const maxFiles = 10;
+    const maxSizeBytes = 30 * 1024 * 1024; // 30MB
+
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      if (attachedFiles.length >= maxFiles) {
+        showToast(`Maximum ${maxFiles} attachments allowed.`, 'error');
+        break;
+      }
+      if (file.size > maxSizeBytes) {
+        showToast(`File "${file.name}" exceeds 30MB limit.`, 'error');
+        continue;
+      }
+      const exists = attachedFiles.some(f => f.name === file.name && f.size === file.size && f.lastModified === file.lastModified);
+      if (!exists) {
+        attachedFiles.push(file);
+      }
+    }
+
+    renderAttachedFilesUI();
+  }
+
+  if (fileDropZone) {
+    fileDropZone.addEventListener('click', (e) => {
+      if (fileUploadInput) fileUploadInput.click();
+    });
+
+    fileDropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      fileDropZone.style.borderColor = '#2563eb';
+      fileDropZone.style.background = '#eff6ff';
+    });
+
+    fileDropZone.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      fileDropZone.style.borderColor = '#93c5fd';
+      fileDropZone.style.background = '#f8fafc';
+    });
+
+    fileDropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      fileDropZone.style.borderColor = '#93c5fd';
+      fileDropZone.style.background = '#f8fafc';
+      if (e.dataTransfer && e.dataTransfer.files) {
+        handleFilesAdded(e.dataTransfer.files);
+      }
+    });
+  }
+
+  if (fileUploadInput) {
+    fileUploadInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        handleFilesAdded(e.target.files);
+        fileUploadInput.value = '';
+      }
+    });
+  }
+
+  if (clearAllFilesBtn) {
+    clearAllFilesBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      attachedFiles = [];
+      renderAttachedFilesUI();
+    });
+  }
 
   // --- 5. Message Form Submit (Send WhatsApp) ---
   messageForm.addEventListener('submit', async (e) => {
@@ -931,10 +1120,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     const text = messageText.value.trim();
-    const file = imageUpload.files[0];
 
-    if (!text && !file) {
-      showToast('Please enter a message or attach an image.', 'error');
+    if (!text && attachedFiles.length === 0) {
+      showToast('Please enter a message or attach at least one photo or PDF document.', 'error');
       return;
     }
 
@@ -968,7 +1156,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!alreadyHasNotice) {
         messageToSend = messageToSend ? `${messageToSend}${noReplyDisclaimer}` : `${officialHeader.trim()}${noReplyDisclaimer}`;
       }
-    } else if (!messageToSend && file) {
+    } else if (!messageToSend && attachedFiles.length > 0) {
       messageToSend = `${officialHeader.trim()}`;
     }
 
@@ -1003,7 +1191,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData();
         formData.append('scheduledAt', scheduledIso);
         formData.append('message', messageToSend);
-        if (file) formData.append('attachment', file);
+        attachedFiles.forEach(f => formData.append('attachments', f));
 
         if (isBulk) {
           const recipientsArray = Array.from(selectedMap.values()).map(r => ({
@@ -1038,7 +1226,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const formData = new FormData();
         formData.append('recipients', JSON.stringify(recipientsArray));
         formData.append('message', messageToSend);
-        if (file) formData.append('attachment', file);
+        attachedFiles.forEach(f => formData.append('attachments', f));
 
         res = await authFetch('/api/send-bulk', {
           method: 'POST',
@@ -1051,7 +1239,7 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('officerId', singleRecipient.id);
         formData.append('phone', singleRecipient.phone);
         formData.append('message', messageToSend);
-        if (file) formData.append('attachment', file);
+        attachedFiles.forEach(f => formData.append('attachments', f));
 
         res = await authFetch('/api/send', {
           method: 'POST',
@@ -1063,7 +1251,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (res.ok && data.success) {
         showToast(data.message || `Action completed successfully!`, 'success');
         messageText.value = '';
-        removeFileBtn.click();
+        attachedFiles = [];
+        renderAttachedFilesUI();
         selectedMap.clear();
         updateSelectionUI();
         if (enableSchedule) {
