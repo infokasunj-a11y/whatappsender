@@ -38,6 +38,9 @@
             <div class="status-title" id="statusTitle">Connecting WhatsApp...</div>
             <div class="status-subtitle" id="statusSub">Please wait...</div>
           </div>
+          <button class="btn btn-sm btn-primary" id="btnShowQr" style="display: none; margin-left: 6px;">
+            <i class="fa-solid fa-qrcode"></i> Link WhatsApp
+          </button>
           <button class="btn btn-sm btn-outline-danger" id="logoutBtn" style="display: none;">
             <i class="fa-solid fa-power-off"></i> Disconnect WA
           </button>
@@ -47,13 +50,32 @@
 
     <!-- QR Code Banner / Alert (If Disconnected or Waiting for QR) -->
     <div class="qr-banner" id="qrBanner" style="display: none;">
-      <div class="qr-content">
-        <div class="qr-text">
-          <h3><i class="fa-solid fa-qrcode"></i> Link Common Office WhatsApp Number</h3>
-          <p>Open WhatsApp on the office phone &gt; Settings / Menu &gt; <b>Linked Devices</b> &gt; <b>Link a Device</b>, then scan this QR code.</p>
+      <div class="qr-content" style="flex-wrap: wrap; gap: 16px;">
+        <div class="qr-text" style="flex: 1; min-width: 280px;">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+            <span class="badge" style="background: #059669; color: white; padding: 3px 8px; border-radius: 4px; font-size: 0.78rem;">
+              <i class="fa-brands fa-whatsapp"></i> Step 1 of 1
+            </span>
+            <h3 style="margin: 0; font-size: 1.15rem; color: #065f46;">ප්‍රාදේශීය ලේකම් කාර්යාලයේ WhatsApp අංකය Link කරන්න</h3>
+          </div>
+          <p style="color: #047857; margin-bottom: 12px; line-height: 1.5; font-size: 0.9rem;">
+            කාර්යාලීය දුරකථනයේ WhatsApp විවෘත කරන්න &gt; Menu (⋮) හෝ Settings &gt; <b>Linked Devices</b> &gt; <b>Link a Device</b> තෝරා පහත QR Code එක Scan කරන්න.
+          </p>
+          <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <button type="button" class="btn btn-sm btn-outline-success" id="btnRefreshQr" style="background: #ffffff; border: 1.5px solid #059669; color: #065f46; font-weight: 600; padding: 6px 14px; border-radius: 6px; cursor: pointer;">
+              <i class="fa-solid fa-arrows-rotate"></i> Refresh QR Code (අලුත් කරන්න)
+            </button>
+            <span id="qrStatusHelp" style="font-size: 0.8rem; color: #047857;">
+              <i class="fa-solid fa-circle-info"></i> සෑම තත්පර කිහිපයකටම QR එක ස්වයංක්‍රීයව update වේ.
+            </span>
+          </div>
         </div>
-        <div class="qr-img-wrapper">
-          <img id="qrCodeImg" src="" alt="WhatsApp QR Code">
+        <div class="qr-img-wrapper" style="position: relative; min-width: 190px; min-height: 190px; display: flex; align-items: center; justify-content: center;">
+          <div id="qrLoadingSpinner" style="display: none; flex-direction: column; align-items: center; gap: 10px; color: #059669; text-align: center; padding: 15px;">
+            <i class="fa-solid fa-circle-notch fa-spin" style="font-size: 2.2rem;"></i>
+            <span style="font-size: 0.82rem; font-weight: 600;">Connecting...<br>QR Code එක සකස් වෙමින් පවතී</span>
+          </div>
+          <img id="qrCodeImg" src="" alt="WhatsApp QR Code" style="display: block; width: 190px; height: 190px; border-radius: 10px; border: 2px solid #059669; background: #ffffff; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
         </div>
       </div>
     </div>

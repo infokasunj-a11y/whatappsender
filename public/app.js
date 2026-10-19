@@ -6,6 +6,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const logoutBtn = document.getElementById('logoutBtn');
   const qrBanner = document.getElementById('qrBanner');
   const qrCodeImg = document.getElementById('qrCodeImg');
+  const btnShowQr = document.getElementById('btnShowQr');
+  const btnRefreshQr = document.getElementById('btnRefreshQr');
+  const qrLoadingSpinner = document.getElementById('qrLoadingSpinner');
+  const qrStatusHelp = document.getElementById('qrStatusHelp');
 
   const tabOfficersBtn = document.getElementById('tabOfficersBtn');
   const tabCustomersBtn = document.getElementById('tabCustomersBtn');
@@ -316,6 +320,49 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // --- 1. WhatsApp Connection Polling ---
+  let isRefreshingQr = false;
+
+  async function triggerQrRefresh() {
+    if (isRefreshingQr) return;
+    isRefreshingQr = true;
+    if (btnRefreshQr) {
+      btnRefreshQr.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Refreshing...`;
+      btnRefreshQr.disabled = true;
+    }
+    if (qrLoadingSpinner) qrLoadingSpinner.style.display = 'flex';
+    if (qrCodeImg) qrCodeImg.style.display = 'none';
+
+    try {
+      await fetch('/api/whatsapp/reconnect', { method: 'POST' });
+      showToast('Reconnecting WhatsApp engine... Please scan the new QR code.', 'info');
+      setTimeout(checkWhatsAppStatus, 1500);
+    } catch (e) {
+      showToast('Error requesting QR refresh.', 'error');
+    } finally {
+      setTimeout(() => {
+        isRefreshingQr = false;
+        if (btnRefreshQr) {
+          btnRefreshQr.innerHTML = `<i class="fa-solid fa-arrows-rotate"></i> Refresh QR Code (අලුත් කරන්න)`;
+          btnRefreshQr.disabled = false;
+        }
+      }, 2000);
+    }
+  }
+
+  if (btnRefreshQr) {
+    btnRefreshQr.addEventListener('click', triggerQrRefresh);
+  }
+
+  if (btnShowQr) {
+    btnShowQr.addEventListener('click', () => {
+      if (qrBanner) {
+        qrBanner.style.display = 'block';
+        qrBanner.scrollIntoView({ behavior: 'smooth' });
+      }
+      triggerQrRefresh();
+    });
+  }
+
   async function checkWhatsAppStatus() {
     try {
       const res = await fetch('/api/status');
@@ -326,41 +373,57 @@ document.addEventListener('DOMContentLoaded', () => {
         statusDot.className = 'status-indicator-dot online';
         statusTitle.textContent = 'WhatsApp Connected';
         statusSub.textContent = data.info ? `Online as +${data.info.wid}` : 'Ready to send messages';
-        qrBanner.style.display = 'none';
+        if (qrBanner) qrBanner.style.display = 'none';
+        if (btnShowQr) btnShowQr.style.display = 'none';
         
         // Disconnect button only visible to Admin
         const isAdmin = currentUser && currentUser.role === 'admin';
-        logoutBtn.style.display = isAdmin ? 'inline-flex' : 'none';
+        if (logoutBtn) logoutBtn.style.display = isAdmin ? 'inline-flex' : 'none';
         
         updateSendButtonState();
       } else if (data.status === 'qr' && data.qrCode) {
         isWhatsAppReady = false;
         statusDot.className = 'status-indicator-dot warning';
         statusTitle.textContent = 'Scan QR Code';
-        statusSub.textContent = 'Link office WhatsApp phone';
-        qrCodeImg.src = data.qrCode;
-        qrBanner.style.display = 'block';
-        logoutBtn.style.display = 'none';
+        statusSub.textContent = 'Waiting for WhatsApp scan...';
+        if (qrCodeImg) {
+          qrCodeImg.src = data.qrCode;
+          qrCodeImg.style.display = 'block';
+        }
+        if (qrLoadingSpinner) qrLoadingSpinner.style.display = 'none';
+        if (qrBanner) qrBanner.style.display = 'block';
+        if (btnShowQr) btnShowQr.style.display = 'none';
+        if (logoutBtn) logoutBtn.style.display = 'none';
         updateSendButtonState();
       } else if (data.status === 'authenticated') {
         isWhatsAppReady = false;
         statusDot.className = 'status-indicator-dot warning';
         statusTitle.textContent = 'Authenticating...';
-        statusSub.textContent = 'Loading chats and session';
-        qrBanner.style.display = 'none';
-        logoutBtn.style.display = 'none';
+        statusSub.textContent = 'Loading chats and session...';
+        if (qrLoadingSpinner) qrLoadingSpinner.style.display = 'flex';
+        if (qrCodeImg) qrCodeImg.style.display = 'none';
+        if (qrBanner) qrBanner.style.display = 'block';
+        if (btnShowQr) btnShowQr.style.display = 'none';
+        if (logoutBtn) logoutBtn.style.display = 'none';
         updateSendButtonState();
       } else {
+        // initializing, connecting, or disconnected
         isWhatsAppReady = false;
-        statusDot.className = 'status-indicator-dot';
-        statusTitle.textContent = 'Disconnected';
-        statusSub.textContent = 'Initializing WhatsApp...';
-        qrBanner.style.display = 'none';
-        logoutBtn.style.display = 'none';
+        statusDot.className = 'status-indicator-dot warning';
+        statusTitle.textContent = 'Connecting WhatsApp...';
+        statusSub.textContent = 'Generating QR code, please wait...';
+        if (qrBanner) qrBanner.style.display = 'block';
+        if (qrLoadingSpinner) qrLoadingSpinner.style.display = 'flex';
+        if (qrCodeImg) qrCodeImg.style.display = 'none';
+        if (btnShowQr) btnShowQr.style.display = 'inline-flex';
+        if (logoutBtn) logoutBtn.style.display = 'none';
         updateSendButtonState();
       }
     } catch (err) {
-      console.error('Status check error:', err);
+      statusDot.className = 'status-indicator-dot';
+      statusTitle.textContent = 'Server Offline';
+      statusSub.textContent = 'Reconnecting to local server...';
+      if (btnShowQr) btnShowQr.style.display = 'inline-flex';
     }
   }
 
