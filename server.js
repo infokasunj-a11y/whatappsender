@@ -1162,9 +1162,9 @@ async function stampPdfWithDsSignature(inputPdfPath, verificationCode, approvalD
     const sigWidth = 165;
     const sigHeight = (sigImage.height / sigImage.width) * sigWidth;
 
-    // Place at bottom right (standard government letter signature area)
-    const sigX = Math.max(30, width - sigWidth - 40);
-    const sigY = 55;
+    // Position: 1 inch from left side (72 pt), 3 inches from bottom (216 pt)
+    const sigX = 72; // 1 inch from left edge
+    const sigY = 216; // 3 inches from bottom edge
 
     lastPage.drawImage(sigImage, {
       x: sigX,
@@ -1182,7 +1182,7 @@ async function stampPdfWithDsSignature(inputPdfPath, verificationCode, approvalD
 
     lastPage.drawText(refText, {
       x: sigX,
-      y: sigY - 10,
+      y: sigY - 11,
       size: 6.5,
       font: helveticaBold,
       color: rgb(0.12, 0.28, 0.55)
@@ -1190,7 +1190,7 @@ async function stampPdfWithDsSignature(inputPdfPath, verificationCode, approvalD
 
     lastPage.drawText(dateText, {
       x: sigX,
-      y: sigY - 18,
+      y: sigY - 19,
       size: 6.5,
       font: helvetica,
       color: rgb(0.35, 0.4, 0.45)
@@ -1230,14 +1230,17 @@ app.post('/api/approvals/request', requireAuth, uploadMiddleware, async (req, re
         return res.status(400).json({ error: 'Recipients list is empty or invalid.' });
       }
     } else {
-      singleRecipient = {
-        id: req.body.officerId || '',
-        name: req.body.recipientName || 'Recipient',
-        phone: req.body.phone || '',
-        fileNo: req.body.fileNo || ''
-      };
-      if (!singleRecipient.phone) {
-        return res.status(400).json({ error: 'Recipient phone number is required.' });
+      const phone = (req.body.phone || '').trim();
+      if (phone) {
+        singleRecipient = {
+          id: req.body.officerId || '',
+          name: req.body.recipientName || 'Recipient',
+          phone,
+          fileNo: req.body.fileNo || ''
+        };
+      } else {
+        // Internal Section Approval (No external recipient)
+        singleRecipient = null;
       }
     }
 
@@ -1348,10 +1351,6 @@ app.post('/api/approvals/:id/approve', requireAuth, async (req, res) => {
     return res.status(403).json({ error: 'Access denied. Only Divisional Secretary (Admin) can approve and sign documents.' });
   }
 
-  if (whatsappStatus !== 'ready' || !sock) {
-    return res.status(503).json({ error: 'WhatsApp is not connected! Please connect WhatsApp before approving and dispatching messages.' });
-  }
-
   const approvals = readJSON(APPROVALS_FILE, []);
   const index = approvals.findIndex(a => a.id === req.params.id);
 
@@ -1362,6 +1361,12 @@ app.post('/api/approvals/:id/approve', requireAuth, async (req, res) => {
   const approval = approvals[index];
   if (approval.status !== 'pending') {
     return res.status(400).json({ error: `This request is already marked as ${approval.status}.` });
+  }
+
+  const hasRecipient = (approval.isBulk && Array.isArray(approval.recipients) && approval.recipients.length > 0) || (approval.recipient && approval.recipient.phone);
+
+  if (hasRecipient && (whatsappStatus !== 'ready' || !sock)) {
+    return res.status(503).json({ error: 'WhatsApp is not connected! Please connect WhatsApp to dispatch approved messages to recipients.' });
   }
 
   try {
@@ -1486,10 +1491,14 @@ app.post('/api/approvals/:id/approve', requireAuth, async (req, res) => {
 
     writeJSON(APPROVALS_FILE, approvals);
 
-    console.log(`[Approval Complete] Approved & dispatched ${approval.verificationCode} by ${req.user.name}`);
+    console.log(`[Approval Complete] Approved ${approval.verificationCode} by ${req.user.name} (hasRecipient: ${!!hasRecipient})`);
+    const successMsg = hasRecipient
+      ? `ලිපිය සාර්ථකව අනුමත කර ඩිජිටල් අත්සන (E-Signature) තබා WhatsApp හරහා යවන ලදී! (Dispatched to ${sentCount} recipient(s))`
+      : `ලිපිය සාර්ථකව අනුමත කර නිල ඩිජිටල් අත්සන (E-Signature) සහ මුද්‍රාව තබන ලදී! (Approved & Signed for Section)`;
+
     res.json({
       success: true,
-      message: `ලිපිය සාර්ථකව අනුමත කර ඩිජිටල් අත්සන (E-Signature) තබා WhatsApp හරහා යවන ලදී! (Dispatched to ${sentCount} recipient(s))`,
+      message: successMsg,
       verificationCode: approval.verificationCode,
       signedFiles: signedFilesMeta
     });
