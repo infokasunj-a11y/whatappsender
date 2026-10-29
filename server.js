@@ -139,6 +139,7 @@ const USERS_FILE = path.join(dataDir, 'users.json');
 const TOKENS_FILE = path.join(dataDir, 'tokens.json');
 const SCHEDULED_FILE = path.join(dataDir, 'scheduled.json');
 const APPROVALS_FILE = path.join(dataDir, 'approvals.json');
+const SETTINGS_FILE = path.join(dataDir, 'settings.json');
 const DS_SIGNATURE_FILE = path.join(__dirname, 'public', 'assets', 'ds_signature.jpg');
 
 function readTokens() {
@@ -1289,6 +1290,24 @@ app.post('/api/approvals/request', requireAuth, uploadMiddleware, async (req, re
 
     console.log(`[Approval Request] New approval submitted by ${req.user.name} (${verificationCode})`);
 
+    // Asynchronously ping Divisional Secretary WhatsApp if alerts are enabled
+    (async () => {
+      try {
+        const settings = readJSON(SETTINGS_FILE, { dsPhone: '0714435277', enableDsAlerts: true });
+        if (settings.enableDsAlerts && settings.dsPhone && whatsappStatus === 'ready' && sock) {
+          const dsJid = await resolveJid(settings.dsPhone);
+          if (dsJid) {
+            const shortMsg = message ? (message.length > 120 ? message.substring(0, 120) + '...' : message) : '[ලිපිගොනු සහ PDF පමණි]';
+            const alertMsg = `🔔 *නව අනුමැති ඉල්ලීමක් (New Approval Request)*\n🏛️ *ප්‍රාදේශීය ලේකම් කාර්යාලය - බණ්ඩාරවෙල*\n*(Divisional Secretariat - Bandarawela)*\n━━━━━━━━━━━━━━━━━━━━\n📂 *ඉදිරිපත් කළ අංශය:* ${req.user.name}\n📑 *අනුමැති අංකය (Ref):* ${verificationCode}\n📅 *දිනය සහ වේලාව:* ${new Date().toLocaleString('si-LK')}\n📝 *විස්තරය:* ${shortMsg}\n📎 *අමුණා ඇති ලිපි:* ${attachments.length} Document(s)\n━━━━━━━━━━━━━━━━━━━━\n👉 *අනුමත කිරීම සඳහා කරුණාකර පද්ධතියට (Approval Hub) පිවිසෙන්න.*`;
+            await sock.sendMessage(dsJid, { text: alertMsg });
+            console.log(`[DS Alert Sent] WhatsApp ping delivered to DS (${settings.dsPhone}) for ${verificationCode}`);
+          }
+        }
+      } catch (alertErr) {
+        console.error('[DS Alert Error] Failed to ping DS WhatsApp:', alertErr.message);
+      }
+    })();
+
     res.json({
       success: true,
       message: 'ලිපිය ප්‍රාදේශීය ලේකම්තුමාගේ අනුමැතිය සහ E-Signature සඳහා සාර්ථකව යොමු කරන ලදී! (Submitted for DS Approval)',
@@ -1564,6 +1583,25 @@ app.delete('/api/approvals/:id', requireAuth, (req, res) => {
   writeJSON(APPROVALS_FILE, approvals);
 
   res.json({ success: true, message: 'Approval record removed.' });
+});
+
+// --- SETTINGS API ---
+app.get('/api/settings', requireAuth, (req, res) => {
+  const settings = readJSON(SETTINGS_FILE, { dsPhone: '0714435277', enableDsAlerts: true });
+  res.json(settings);
+});
+
+app.post('/api/settings', requireAuth, (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Access denied. Only Divisional Secretary (Admin) can update alert settings.' });
+  }
+  const { dsPhone, enableDsAlerts } = req.body;
+  const settings = readJSON(SETTINGS_FILE, { dsPhone: '0714435277', enableDsAlerts: true });
+  if (dsPhone !== undefined) settings.dsPhone = String(dsPhone).trim();
+  if (enableDsAlerts !== undefined) settings.enableDsAlerts = Boolean(enableDsAlerts);
+  writeJSON(SETTINGS_FILE, settings);
+  console.log(`[Settings] DS WhatsApp Alert updated: Phone=${settings.dsPhone}, Enabled=${settings.enableDsAlerts}`);
+  res.json({ success: true, message: 'Alert settings updated successfully!', settings });
 });
 
 // Start Express Server with EADDRINUSE graceful fallback
