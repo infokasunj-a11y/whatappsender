@@ -582,16 +582,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (isApproval) {
-      if (count > 0 && authToken) {
+      if (authToken) {
         sendBtn.removeAttribute('disabled');
         sendBtn.className = 'btn btn-warning btn-lg';
-        sendBtn.innerHTML = count > 1
-          ? `<i class="fa-solid fa-file-signature"></i> ලේකම්තුමාගේ අනුමැතියට යොමු කරන්න (${count} දෙනෙකුට)`
-          : `<i class="fa-solid fa-file-signature"></i> ලේකම්තුමාගේ අනුමැතිය සහ E-Signature සඳහා යොමු කරන්න`;
+        if (count > 0) {
+          sendBtn.innerHTML = count > 1
+            ? `<i class="fa-solid fa-file-signature"></i> ලේකම්තුමාගේ අනුමැතිය සහ WhatsApp Dispatch වෙත (${count} දෙනෙකුට)`
+            : `<i class="fa-solid fa-file-signature"></i> ලේකම්තුමාගේ අනුමැතිය සහ WhatsApp Dispatch වෙත`;
+        } else {
+          sendBtn.innerHTML = `<i class="fa-solid fa-file-signature"></i> ලේකම්තුමාගේ අනුමැතියට යොමු කරන්න (අභ්‍යන්තර අනුමැතිය)`;
+        }
       } else {
         sendBtn.setAttribute('disabled', 'true');
-        sendBtn.className = 'btn btn-warning btn-lg';
-        sendBtn.innerHTML = `<i class="fa-solid fa-file-signature"></i> ලේකම්තුමාගේ අනුමැතියට (වම්පසින් ලබන්නා තෝරන්න)`;
       }
       return;
     }
@@ -1210,7 +1212,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    if (selectedMap.size === 0) {
+    if (!isApproval && selectedMap.size === 0) {
       showToast('Please select at least one recipient (officer or customer) first.', 'error');
       return;
     }
@@ -1278,13 +1280,18 @@ document.addEventListener('DOMContentLoaded', () => {
           }));
           formData.append('isBulk', 'true');
           formData.append('recipients', JSON.stringify(recipientsArray));
-        } else {
+        } else if (count > 0) {
           const singleRecipient = Array.from(selectedMap.values())[0];
           formData.append('isBulk', 'false');
           formData.append('officerId', singleRecipient.id || '');
           formData.append('phone', singleRecipient.phone);
           formData.append('recipientName', singleRecipient.name);
           formData.append('fileNo', singleRecipient.fileNo || '');
+        } else {
+          // Internal Section Approval (No external recipient)
+          formData.append('isBulk', 'false');
+          formData.append('phone', '');
+          formData.append('recipientName', '');
         }
 
         const res = await authFetch('/api/approvals/request', {
@@ -1920,18 +1927,24 @@ document.addEventListener('DOMContentLoaded', () => {
         if (item.status === 'pending') {
           statusBadgeHtml = `<span style="background: #fef3c7; color: #b45309; border: 1px solid #fde68a; padding: 3px 8px; border-radius: 6px; font-size: 0.76rem; font-weight: 600;"><i class="fa-solid fa-clock"></i> අනුමැතිය අපේක්ෂිත (Pending)</span>`;
         } else if (item.status === 'approved') {
-          statusBadgeHtml = `<span style="background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; padding: 3px 8px; border-radius: 6px; font-size: 0.76rem; font-weight: 600;"><i class="fa-solid fa-circle-check"></i> අනුමතයි - E-Signed & Sent</span>`;
+          const isInternal = item.isInternal || (!item.recipient && (!item.recipients || item.recipients.length === 0));
+          statusBadgeHtml = isInternal
+            ? `<span style="background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; padding: 3px 8px; border-radius: 6px; font-size: 0.76rem; font-weight: 600;"><i class="fa-solid fa-circle-check"></i> අනුමතයි - E-Signed (Section Copy)</span>`
+            : `<span style="background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; padding: 3px 8px; border-radius: 6px; font-size: 0.76rem; font-weight: 600;"><i class="fa-solid fa-circle-check"></i> අනුමතයි - E-Signed & WhatsApp Sent</span>`;
         } else if (item.status === 'rejected') {
           statusBadgeHtml = `<span style="background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; padding: 3px 8px; border-radius: 6px; font-size: 0.76rem; font-weight: 600;"><i class="fa-solid fa-circle-xmark"></i> සංශෝධන අවශ්‍යයි (Rejected)</span>`;
         }
 
         // Recipient details
         let recipientInfoHtml = '';
+        const itemHasRecipient = (item.isBulk && Array.isArray(item.recipients) && item.recipients.length > 0) || (item.recipient && item.recipient.phone);
         if (item.isBulk) {
           recipientInfoHtml = `<strong>කණ්ඩායම් පණිවිඩයක් (Bulk):</strong> ${item.recipients ? item.recipients.length : 0} Recipients`;
-        } else if (item.recipient) {
+        } else if (item.recipient && item.recipient.phone) {
           const fileNoTag = item.recipient.fileNo ? ` <span style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;">📂 ගොනු අංකය: ${item.recipient.fileNo}</span>` : '';
           recipientInfoHtml = `<strong>${item.recipient.name}</strong> (${item.recipient.phone})${fileNoTag}`;
+        } else {
+          recipientInfoHtml = `<span style="background: #f1f5f9; color: #475569; padding: 3px 8px; border-radius: 4px; font-size: 0.78rem; font-weight: 600;"><i class="fa-solid fa-building-user" style="color: #2563eb;"></i> අභ්‍යන්තර කාර්යාල අනුමැතිය (Internal Section Copy Only)</span>`;
         }
 
         // Attachments HTML
@@ -1989,8 +2002,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button type="button" class="btn btn-sm btn-danger btn-reject-approval" data-id="${item.id}" data-ref="${item.verificationCode}" style="padding: 6px 14px; font-size: 0.82rem; font-weight: 600;">
                   <i class="fa-solid fa-xmark"></i> සංශෝධන දන්වන්න (Reject)
                 </button>
-                <button type="button" class="btn btn-sm btn-success btn-approve-approval" data-id="${item.id}" data-ref="${item.verificationCode}" style="padding: 6px 18px; font-size: 0.82rem; font-weight: 700; background: #16a34a; border-color: #15803d; box-shadow: 0 2px 4px rgba(22,163,74,0.25);">
-                  <i class="fa-solid fa-signature"></i> අනුමත කර E-Sign කරන්න (Approve & E-Sign)
+                <button type="button" class="btn btn-sm btn-success btn-approve-approval" data-id="${item.id}" data-ref="${item.verificationCode}" data-has-recipient="${itemHasRecipient ? 'true' : 'false'}" style="padding: 6px 18px; font-size: 0.82rem; font-weight: 700; background: #16a34a; border-color: #15803d; box-shadow: 0 2px 4px rgba(22,163,74,0.25);">
+                  <i class="fa-solid fa-signature"></i> ${itemHasRecipient ? 'අනුමත කර WhatsApp යවන්න' : 'අනුමත කර E-Sign කරන්න (Internal)'}
                 </button>
               </div>
             `;
@@ -2041,7 +2054,8 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.addEventListener('click', () => {
           const id = btn.getAttribute('data-id');
           const ref = btn.getAttribute('data-ref');
-          executeApproveAndSign(id, ref);
+          const hasRecipient = btn.getAttribute('data-has-recipient') === 'true';
+          executeApproveAndSign(id, ref, hasRecipient);
         });
       });
 
@@ -2076,17 +2090,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  async function executeApproveAndSign(id, ref) {
-    if (!isWhatsAppReady) {
-      showToast('WhatsApp is not connected! Please scan QR code first.', 'error');
+  async function executeApproveAndSign(id, ref, hasRecipient) {
+    if (hasRecipient && !isWhatsAppReady) {
+      showToast('WhatsApp is not connected! Please scan QR code first to dispatch.', 'error');
       return;
     }
 
-    if (!confirm(`ප්‍රාදේශීය ලේකම් නිල ඩිජිටල් අත්සන (E-Signature) සහ මුද්‍රාව තබා මෙම ලේඛනය (${ref}) අනුමත කර WhatsApp හරහා යැවීම තහවුරු කරන්නද?`)) {
+    const confirmMsg = hasRecipient
+      ? `ප්‍රාදේශීය ලේකම් නිල ඩිජිටල් අත්සන (E-Signature) සහ මුද්‍රාව තබා මෙම ලේඛනය (${ref}) අනුමත කර WhatsApp හරහා යැවීම තහවුරු කරන්නද?`
+      : `ප්‍රාදේශීය ලේකම් නිල ඩිජිටල් අත්සන (E-Signature) සහ මුද්‍රාව තබා මෙම අභ්‍යන්තර ලේඛනය (${ref}) අනුමත කිරීම තහවුරු කරන්නද?`;
+
+    if (!confirm(confirmMsg)) {
       return;
     }
 
-    showToast('Stamping E-Signature & dispatching WhatsApp message...', 'info');
+    showToast(hasRecipient ? 'Stamping E-Signature & dispatching WhatsApp message...' : 'Stamping E-Signature onto internal document...', 'info');
 
     try {
       const res = await authFetch(`/api/approvals/${id}/approve`, { method: 'POST' });
