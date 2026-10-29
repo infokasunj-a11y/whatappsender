@@ -24,7 +24,7 @@
     "id": "usr_samurdhi",
     "username": "samurdhisection",
     "password": "dssamurdhi123",
-    "name": "Samurdhi & Aswesuma (සමෘද්ධි සහ අස්වැසුම අංශය)",
+    "name": "Samurdhi & Aswesuma (සමෘද්ධි හා අස්වැසුම අංශය)",
     "role": "section_user"
   },
   {
@@ -59,7 +59,7 @@
     "id": "usr_reg",
     "username": "regsection",
     "password": "dsreg123",
-    "name": "Registrar of Births/Deaths/Marriages (ලියාපදිංචි අංශය)",
+    "name": "Registrar of Births/Deaths/Marriages (ලේඛකාධිකාරී අංශය)",
     "role": "section_user"
   },
   {
