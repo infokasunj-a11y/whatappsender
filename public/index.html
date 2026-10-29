@@ -594,6 +594,25 @@
         </div>
       </div>
 
+      <!-- DS WhatsApp Alert Bar (Admin Only) -->
+      <div id="dsAlertConfigBar" style="display: none; background: #fffbeb; border-bottom: 1px solid #fde68a; padding: 8px 20px; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <i class="fa-solid fa-bell" style="color: #d97706; font-size: 0.95rem;"></i>
+          <span style="font-size: 0.78rem; font-weight: 600; color: #92400e;">
+            ලේකම්තුමාගේ WhatsApp Alert අංකය (Auto Alert on New Submission):
+          </span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <input type="text" id="dsAlertPhoneInput" placeholder="07x xxx xxxx" style="padding: 3px 8px; font-size: 0.8rem; border-radius: 6px; border: 1px solid #d97706; width: 125px; font-weight: 600; background: #fff;">
+          <label style="display: flex; align-items: center; gap: 4px; font-size: 0.76rem; font-weight: 600; color: #92400e; cursor: pointer; margin: 0;">
+            <input type="checkbox" id="dsAlertToggle" checked style="accent-color: #d97706; cursor: pointer;"> Alert Active
+          </label>
+          <button type="button" id="btnSaveDsAlertSettings" class="btn btn-sm" style="background: #d97706; color: #fff; font-size: 0.75rem; padding: 3px 10px; border-radius: 6px; font-weight: 600; cursor: pointer; border: none;">
+            <i class="fa-solid fa-floppy-disk"></i> Save
+          </button>
+        </div>
+      </div>
+
       <!-- Tabs: Pending, Approved, Rejected -->
       <div style="display: flex; gap: 4px; padding: 10px 20px 0 20px; border-bottom: 1px solid #e2e8f0; background: #fff;">
         <button type="button" class="tab-btn active" id="tabApprovalsPending" style="padding: 8px 16px; border: none; background: none; font-size: 0.85rem; font-weight: 600; color: #2563eb; border-bottom: 2px solid #2563eb; cursor: pointer;">
