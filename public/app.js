@@ -63,6 +63,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const confirmRejectBtn = document.getElementById('confirmRejectBtn');
   const rejectTargetApprovalId = document.getElementById('rejectTargetApprovalId');
   const rejectionRemarksInput = document.getElementById('rejectionRemarksInput');
+  const dsAlertConfigBar = document.getElementById('dsAlertConfigBar');
+  const dsAlertPhoneInput = document.getElementById('dsAlertPhoneInput');
+  const dsAlertToggle = document.getElementById('dsAlertToggle');
+  const btnSaveDsAlertSettings = document.getElementById('btnSaveDsAlertSettings');
 
   // Officers Modal Elements
   const officerModal = document.getElementById('officerModal');
@@ -296,6 +300,11 @@ document.addEventListener('DOMContentLoaded', () => {
         approvalBoxContainer.style.display = 'block';
       }
       updateApprovalsBadge();
+
+      if (dsAlertConfigBar) {
+        dsAlertConfigBar.style.display = isAdmin ? 'flex' : 'none';
+        if (isAdmin) loadDsAlertSettings();
+      }
 
       // Do Not Reply Checkbox (Message Tick): ONLY modifiable by Admin! For Section users, it is locked/mandatory!
       const includeDoNotReply = document.getElementById('includeDoNotReply');
@@ -2183,6 +2192,52 @@ document.addEventListener('DOMContentLoaded', () => {
   if (closeApprovalsModalBtn) closeApprovalsModalBtn.addEventListener('click', () => approvalsModal.classList.remove('active'));
   if (closeApprovalsModalBtn2) closeApprovalsModalBtn2.addEventListener('click', () => approvalsModal.classList.remove('active'));
   if (refreshApprovalsListBtn) refreshApprovalsListBtn.addEventListener('click', () => loadApprovalsList(activeApprovalsTab));
+
+  // DS Alert Settings Functions
+  async function loadDsAlertSettings() {
+    if (!authToken) return;
+    try {
+      const res = await authFetch('/api/settings');
+      if (res.ok) {
+        const settings = await res.json();
+        if (dsAlertPhoneInput) dsAlertPhoneInput.value = settings.dsPhone || '0714435277';
+        if (dsAlertToggle) dsAlertToggle.checked = settings.enableDsAlerts !== false;
+      }
+    } catch (e) {
+      console.error('Failed to load alert settings:', e);
+    }
+  }
+
+  if (btnSaveDsAlertSettings) {
+    btnSaveDsAlertSettings.addEventListener('click', async () => {
+      const dsPhone = dsAlertPhoneInput ? dsAlertPhoneInput.value.trim() : '';
+      const enableDsAlerts = dsAlertToggle ? dsAlertToggle.checked : true;
+      if (!dsPhone) {
+        showToast('Please enter a valid phone number for DS WhatsApp alerts.', 'error');
+        return;
+      }
+      btnSaveDsAlertSettings.disabled = true;
+      btnSaveDsAlertSettings.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Saving...`;
+      try {
+        const res = await authFetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dsPhone, enableDsAlerts })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast('ලේකම්තුමාගේ WhatsApp Alert අංකය සාර්ථකව සුරකින ලදී! (Settings Saved)', 'success');
+        } else {
+          showToast(data.error || 'Failed to save settings.', 'error');
+        }
+      } catch (err) {
+        showToast('Network error saving settings.', 'error');
+      } finally {
+        btnSaveDsAlertSettings.disabled = false;
+        btnSaveDsAlertSettings.innerHTML = `<i class="fa-solid fa-floppy-disk"></i> Save`;
+      }
+    });
+  }
 
   // Initialize Session Check
   checkSession();
