@@ -39,6 +39,31 @@ document.addEventListener('DOMContentLoaded', () => {
   const sendBtn = document.getElementById('sendBtn');
   const historyList = document.getElementById('historyList');
 
+  // Approval & E-Signature DOM Elements
+  const openApprovalsBtn = document.getElementById('openApprovalsBtn');
+  const navApprovalsBadge = document.getElementById('navApprovalsBadge');
+  const openMyApprovalsBtn = document.getElementById('openMyApprovalsBtn');
+  const navMyPendingBadge = document.getElementById('navMyPendingBadge');
+  const chkRequireApproval = document.getElementById('chkRequireApproval');
+  const approvalBoxContainer = document.getElementById('approvalBoxContainer');
+  const approvalsModal = document.getElementById('approvalsModal');
+  const closeApprovalsModalBtn = document.getElementById('closeApprovalsModalBtn');
+  const closeApprovalsModalBtn2 = document.getElementById('closeApprovalsModalBtn2');
+  const refreshApprovalsListBtn = document.getElementById('refreshApprovalsListBtn');
+  const tabApprovalsPending = document.getElementById('tabApprovalsPending');
+  const tabApprovalsApproved = document.getElementById('tabApprovalsApproved');
+  const tabApprovalsRejected = document.getElementById('tabApprovalsRejected');
+  const countPendingApprovals = document.getElementById('countPendingApprovals');
+  const countApprovedApprovals = document.getElementById('countApprovedApprovals');
+  const countRejectedApprovals = document.getElementById('countRejectedApprovals');
+  const approvalsListContainer = document.getElementById('approvalsListContainer');
+  const rejectRemarksModal = document.getElementById('rejectRemarksModal');
+  const closeRejectModalBtn = document.getElementById('closeRejectModalBtn');
+  const cancelRejectModalBtn = document.getElementById('cancelRejectModalBtn');
+  const confirmRejectBtn = document.getElementById('confirmRejectBtn');
+  const rejectTargetApprovalId = document.getElementById('rejectTargetApprovalId');
+  const rejectionRemarksInput = document.getElementById('rejectionRemarksInput');
+
   // Officers Modal Elements
   const officerModal = document.getElementById('officerModal');
   const closeModalBtn = document.getElementById('closeModalBtn');
@@ -259,6 +284,18 @@ document.addEventListener('DOMContentLoaded', () => {
       if (logoutBtn) {
         logoutBtn.style.display = (isAdmin && isWhatsAppReady) ? 'inline-flex' : 'none';
       }
+
+      // DS Approvals button (Admin sees full approval hub; Section heads see their submissions)
+      if (openApprovalsBtn) {
+        openApprovalsBtn.style.display = isAdmin ? 'inline-flex' : 'none';
+      }
+      if (openMyApprovalsBtn) {
+        openMyApprovalsBtn.style.display = isAdmin ? 'none' : 'inline-flex';
+      }
+      if (approvalBoxContainer) {
+        approvalBoxContainer.style.display = 'block';
+      }
+      updateApprovalsBadge();
 
       // Do Not Reply Checkbox (Message Tick): ONLY modifiable by Admin! For Section users, it is locked/mandatory!
       const includeDoNotReply = document.getElementById('includeDoNotReply');
@@ -537,13 +574,22 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateSendButtonState() {
     const count = selectedMap.size;
     const isScheduled = enableSchedule && enableSchedule.checked;
-    if (isWhatsAppReady && count > 0 && authToken) {
+    const isApproval = chkRequireApproval && chkRequireApproval.checked;
+
+    if ((isWhatsAppReady || isApproval) && count > 0 && authToken) {
       sendBtn.removeAttribute('disabled');
-      if (isScheduled) {
+      if (isApproval) {
+        sendBtn.className = 'btn btn-warning btn-lg';
+        sendBtn.innerHTML = count > 1
+          ? `<i class="fa-solid fa-file-signature"></i> ලේකම්තුමාගේ අනුමැතියට යොමු කරන්න (${count} දෙනෙකුට)`
+          : `<i class="fa-solid fa-file-signature"></i> ලේකම්තුමාගේ අනුමැතිය සහ E-Signature සඳහා යොමු කරන්න`;
+      } else if (isScheduled) {
+        sendBtn.className = 'btn btn-success btn-lg';
         sendBtn.innerHTML = count > 1
           ? `<i class="fa-solid fa-calendar-plus"></i> Schedule Bulk Message (${count} Recipients)`
           : `<i class="fa-solid fa-calendar-plus"></i> Schedule WhatsApp Message`;
       } else {
+        sendBtn.className = 'btn btn-success btn-lg';
         if (count > 1) {
           sendBtn.innerHTML = `<i class="fa-brands fa-whatsapp"></i> Send Bulk Message (${count} Recipients)`;
         } else {
@@ -552,10 +598,19 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } else {
       sendBtn.setAttribute('disabled', 'true');
-      sendBtn.innerHTML = isScheduled
-        ? `<i class="fa-solid fa-calendar-plus"></i> Schedule WhatsApp Message`
-        : `<i class="fa-brands fa-whatsapp"></i> Send via Office WhatsApp`;
+      sendBtn.className = 'btn btn-success btn-lg';
+      if (!isWhatsAppReady && !isApproval) {
+        sendBtn.innerHTML = `<i class="fa-solid fa-ban"></i> Connect WhatsApp to Send`;
+      } else if (count === 0) {
+        sendBtn.innerHTML = `<i class="fa-brands fa-whatsapp"></i> Select Recipient First`;
+      } else {
+        sendBtn.innerHTML = `<i class="fa-brands fa-whatsapp"></i> Send via Office WhatsApp`;
+      }
     }
+  }
+
+  if (chkRequireApproval) {
+    chkRequireApproval.addEventListener('change', updateSendButtonState);
   }
 
   if (selectAllCheckbox) {
@@ -1109,7 +1164,9 @@ document.addEventListener('DOMContentLoaded', () => {
   messageForm.addEventListener('submit', async (e) => {
     e.preventDefault();
 
-    if (!isWhatsAppReady) {
+    const isApproval = chkRequireApproval && chkRequireApproval.checked;
+
+    if (!isApproval && !isWhatsAppReady) {
       showToast('WhatsApp is not connected yet!', 'error');
       return;
     }
@@ -1162,6 +1219,63 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const count = selectedMap.size;
     const isBulk = count > 1;
+
+    // Branch A: Request DS Approval & E-Signature
+    if (isApproval) {
+      sendBtn.setAttribute('disabled', 'true');
+      sendBtn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Submitting for DS Approval...`;
+
+      try {
+        const formData = new FormData();
+        formData.append('message', messageToSend);
+        attachedFiles.forEach(f => formData.append('attachments', f));
+
+        if (isBulk) {
+          const recipientsArray = Array.from(selectedMap.values()).map(r => ({
+            id: r.id,
+            name: r.name,
+            phone: r.phone,
+            fileNo: r.fileNo || ''
+          }));
+          formData.append('isBulk', 'true');
+          formData.append('recipients', JSON.stringify(recipientsArray));
+        } else {
+          const singleRecipient = Array.from(selectedMap.values())[0];
+          formData.append('isBulk', 'false');
+          formData.append('officerId', singleRecipient.id || '');
+          formData.append('phone', singleRecipient.phone);
+          formData.append('recipientName', singleRecipient.name);
+          formData.append('fileNo', singleRecipient.fileNo || '');
+        }
+
+        const res = await authFetch('/api/approvals/request', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          showToast(data.message || 'Submitted for DS Approval!', 'success');
+          messageText.value = '';
+          attachedFiles = [];
+          renderAttachedFilesUI();
+          selectedMap.clear();
+          updateSelectionUI();
+          if (chkRequireApproval) chkRequireApproval.checked = false;
+          updateApprovalsBadge();
+        } else {
+          showToast(data.error || 'Failed to submit approval request.', 'error');
+        }
+      } catch (err) {
+        console.error('Approval submit error:', err);
+        showToast('Network error submitting approval request.', 'error');
+      } finally {
+        updateSendButtonState();
+      }
+      return;
+    }
+
+    // Branch B: Direct Scheduled or Immediate WhatsApp Dispatch
     const isScheduled = enableSchedule && enableSchedule.checked;
     let scheduledIso = null;
 
@@ -1652,6 +1766,361 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  // ===============================================
+  // --- 7. DS Approvals & E-Signature Hub Logic ---
+  // ===============================================
+  let activeApprovalsTab = 'pending';
+
+  async function updateApprovalsBadge() {
+    if (!authToken) return;
+    try {
+      const res = await authFetch('/api/approvals/count-pending');
+      if (!res.ok) return;
+      const data = await res.json();
+      const count = data.pendingCount || 0;
+
+      if (navApprovalsBadge) {
+        navApprovalsBadge.textContent = count;
+        navApprovalsBadge.style.display = count > 0 ? 'inline-block' : 'none';
+      }
+      if (navMyPendingBadge) {
+        navMyPendingBadge.textContent = count;
+        navMyPendingBadge.style.display = count > 0 ? 'inline-block' : 'none';
+      }
+      if (countPendingApprovals) {
+        countPendingApprovals.textContent = count;
+      }
+    } catch (e) {}
+  }
+
+  setInterval(updateApprovalsBadge, 30 * 1000);
+
+  function switchApprovalsTab(tabName) {
+    activeApprovalsTab = tabName;
+    if (tabApprovalsPending) {
+      tabApprovalsPending.classList.toggle('active', tabName === 'pending');
+      tabApprovalsPending.style.color = tabName === 'pending' ? '#2563eb' : '#64748b';
+      tabApprovalsPending.style.borderBottom = tabName === 'pending' ? '2px solid #2563eb' : 'none';
+    }
+    if (tabApprovalsApproved) {
+      tabApprovalsApproved.classList.toggle('active', tabName === 'approved');
+      tabApprovalsApproved.style.color = tabName === 'approved' ? '#16a34a' : '#64748b';
+      tabApprovalsApproved.style.borderBottom = tabName === 'approved' ? '2px solid #16a34a' : 'none';
+    }
+    if (tabApprovalsRejected) {
+      tabApprovalsRejected.classList.toggle('active', tabName === 'rejected');
+      tabApprovalsRejected.style.color = tabName === 'rejected' ? '#dc2626' : '#64748b';
+      tabApprovalsRejected.style.borderBottom = tabName === 'rejected' ? '2px solid #dc2626' : 'none';
+    }
+    loadApprovalsList(tabName);
+  }
+
+  if (tabApprovalsPending) tabApprovalsPending.addEventListener('click', () => switchApprovalsTab('pending'));
+  if (tabApprovalsApproved) tabApprovalsApproved.addEventListener('click', () => switchApprovalsTab('approved'));
+  if (tabApprovalsRejected) tabApprovalsRejected.addEventListener('click', () => switchApprovalsTab('rejected'));
+
+  async function loadApprovalsList(statusFilter = activeApprovalsTab) {
+    if (!approvalsListContainer) return;
+    approvalsListContainer.innerHTML = `<div style="text-align:center; padding: 25px; color: #64748b;"><i class="fa-solid fa-spinner fa-spin" style="font-size: 1.5rem;"></i><br><span style="margin-top: 8px; display: inline-block;">Loading approvals...</span></div>`;
+
+    try {
+      const res = await authFetch(`/api/approvals?status=${statusFilter}`);
+      if (!res.ok) throw new Error('Failed to fetch approvals');
+      const items = await res.json();
+
+      // Also get all to update tab counts
+      const resAll = await authFetch('/api/approvals');
+      if (resAll.ok) {
+        const allItems = await resAll.json();
+        const pendingCount = allItems.filter(a => a.status === 'pending').length;
+        const approvedCount = allItems.filter(a => a.status === 'approved').length;
+        const rejectedCount = allItems.filter(a => a.status === 'rejected').length;
+
+        if (countPendingApprovals) countPendingApprovals.textContent = pendingCount;
+        if (countApprovedApprovals) countApprovedApprovals.textContent = approvedCount;
+        if (countRejectedApprovals) countRejectedApprovals.textContent = rejectedCount;
+        if (navApprovalsBadge) {
+          navApprovalsBadge.textContent = pendingCount;
+          navApprovalsBadge.style.display = pendingCount > 0 ? 'inline-block' : 'none';
+        }
+      }
+
+      if (items.length === 0) {
+        const emptyMsg = statusFilter === 'pending'
+          ? 'අනුමැතිය අපේක්ෂිත ලිපි කිසිවක් නොමැත. (No pending approval requests)'
+          : (statusFilter === 'approved'
+              ? 'අනුමත කළ ලිපි කිසිවක් නොමැත. (No approved letters yet)'
+              : 'සංශෝධන සඳහා යැවූ ලිපි කිසිවක් නොමැත. (No rejected requests)');
+
+        approvalsListContainer.innerHTML = `
+          <div style="text-align: center; padding: 35px 20px; background: #f8fafc; border-radius: 8px; border: 1px dashed #cbd5e1; color: #64748b;">
+            <i class="fa-solid fa-folder-open" style="font-size: 2.2rem; color: #94a3b8; margin-bottom: 10px;"></i>
+            <div style="font-size: 0.92rem; font-weight: 600;">${emptyMsg}</div>
+          </div>
+        `;
+        return;
+      }
+
+      const isAdmin = currentUser && currentUser.role === 'admin';
+      approvalsListContainer.innerHTML = '';
+
+      items.forEach(item => {
+        const card = document.createElement('div');
+        card.style.cssText = 'background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 10px;';
+
+        const createdDate = new Date(item.createdAt).toLocaleString('en-GB');
+        const sectionBadge = item.requestedBy ? item.requestedBy.name : 'Unknown Section';
+
+        let statusBadgeHtml = '';
+        if (item.status === 'pending') {
+          statusBadgeHtml = `<span style="background: #fef3c7; color: #b45309; border: 1px solid #fde68a; padding: 3px 8px; border-radius: 6px; font-size: 0.76rem; font-weight: 600;"><i class="fa-solid fa-clock"></i> අනුමැතිය අපේක්ෂිත (Pending)</span>`;
+        } else if (item.status === 'approved') {
+          statusBadgeHtml = `<span style="background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; padding: 3px 8px; border-radius: 6px; font-size: 0.76rem; font-weight: 600;"><i class="fa-solid fa-circle-check"></i> අනුමතයි - E-Signed & Sent</span>`;
+        } else if (item.status === 'rejected') {
+          statusBadgeHtml = `<span style="background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; padding: 3px 8px; border-radius: 6px; font-size: 0.76rem; font-weight: 600;"><i class="fa-solid fa-circle-xmark"></i> සංශෝධන අවශ්‍යයි (Rejected)</span>`;
+        }
+
+        // Recipient details
+        let recipientInfoHtml = '';
+        if (item.isBulk) {
+          recipientInfoHtml = `<strong>කණ්ඩායම් පණිවිඩයක් (Bulk):</strong> ${item.recipients ? item.recipients.length : 0} Recipients`;
+        } else if (item.recipient) {
+          const fileNoTag = item.recipient.fileNo ? ` <span style="background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;">📂 ගොනු අංකය: ${item.recipient.fileNo}</span>` : '';
+          recipientInfoHtml = `<strong>${item.recipient.name}</strong> (${item.recipient.phone})${fileNoTag}`;
+        }
+
+        // Attachments HTML
+        let attachmentsHtml = '';
+        if (item.attachments && item.attachments.length > 0) {
+          attachmentsHtml = `
+            <div style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px;">
+              <span style="font-size: 0.76rem; color: #64748b; font-weight: 600;"><i class="fa-solid fa-paperclip"></i> අමුණා ඇති ලිපි/Files:</span>
+              ${item.attachments.map(att => {
+                const isPdf = (att.mimetype === 'application/pdf') || (att.filename && att.filename.endsWith('.pdf'));
+                const icon = isPdf ? '<i class="fa-solid fa-file-pdf" style="color: #ef4444;"></i>' : '<i class="fa-solid fa-image" style="color: #3b82f6;"></i>';
+                return `<a href="/uploads/${att.filename}" target="_blank" style="text-decoration: none; background: #f1f5f9; border: 1px solid #e2e8f0; color: #1e293b; padding: 3px 8px; border-radius: 4px; font-size: 0.76rem; display: inline-flex; align-items: center; gap: 4px;">
+                  ${icon} ${att.originalname || att.filename}
+                </a>`;
+              }).join('')}
+            </div>
+          `;
+        }
+
+        // Signed PDF preview if approved
+        let signedFilesHtml = '';
+        if (item.status === 'approved' && item.signedFiles && item.signedFiles.length > 0) {
+          signedFilesHtml = `
+            <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 8px 12px; margin-top: 6px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <i class="fa-solid fa-stamp" style="color: #16a34a; font-size: 1.2rem;"></i>
+                <div>
+                  <span style="font-size: 0.8rem; font-weight: 700; color: #166534; display: block;">ප්‍රාදේශීය ලේකම් නිල ඩිජිටල් අත්සන සහිත PDF (Signed Document):</span>
+                  <span style="font-size: 0.74rem; color: #15803d;">අනුමත කළ දිනය: ${item.reviewedAt ? new Date(item.reviewedAt).toLocaleString('en-GB') : ''}</span>
+                </div>
+              </div>
+              ${item.signedFiles.map(sf => `<a href="${sf.url}" target="_blank" class="btn btn-sm btn-success" style="font-size: 0.78rem; text-decoration: none; padding: 4px 10px;">
+                <i class="fa-solid fa-file-arrow-down"></i> අත්සන් කළ PDF එක බලන්න
+              </a>`).join('')}
+            </div>
+          `;
+        }
+
+        // Rejection remarks if rejected
+        let rejectionBoxHtml = '';
+        if (item.status === 'rejected' && item.rejectionRemarks) {
+          rejectionBoxHtml = `
+            <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 8px 12px; margin-top: 6px; color: #991b1b; font-size: 0.8rem;">
+              <strong><i class="fa-solid fa-comment-dots"></i> ලේකම්තුමාගේ සංශෝධන සටහන:</strong> "${item.rejectionRemarks}"
+            </div>
+          `;
+        }
+
+        // Action buttons
+        let actionButtonsHtml = '';
+        if (item.status === 'pending') {
+          if (isAdmin) {
+            actionButtonsHtml = `
+              <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 8px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-sm btn-danger btn-reject-approval" data-id="${item.id}" data-ref="${item.verificationCode}" style="padding: 6px 14px; font-size: 0.82rem; font-weight: 600;">
+                  <i class="fa-solid fa-xmark"></i> සංශෝධන දන්වන්න (Reject)
+                </button>
+                <button type="button" class="btn btn-sm btn-success btn-approve-approval" data-id="${item.id}" data-ref="${item.verificationCode}" style="padding: 6px 18px; font-size: 0.82rem; font-weight: 700; background: #16a34a; border-color: #15803d; box-shadow: 0 2px 4px rgba(22,163,74,0.25);">
+                  <i class="fa-solid fa-signature"></i> අනුමත කර E-Sign කරන්න (Approve & E-Sign)
+                </button>
+              </div>
+            `;
+          } else {
+            actionButtonsHtml = `
+              <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 6px;">
+                <button type="button" class="btn btn-sm btn-outline-danger btn-delete-approval" data-id="${item.id}" style="padding: 4px 10px; font-size: 0.78rem;">
+                  <i class="fa-solid fa-trash-can"></i> ඉල්ලීම අවලංගු කරන්න
+                </button>
+              </div>
+            `;
+          }
+        }
+
+        card.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="badge" style="background: #eff6ff; color: #1d4ed8; font-weight: 700; padding: 4px 8px; border-radius: 6px; font-size: 0.8rem;">
+                <i class="fa-solid fa-folder-closed"></i> ${sectionBadge}
+              </span>
+              <span style="font-family: monospace; font-size: 0.78rem; font-weight: 700; color: #475569; background: #f8fafc; padding: 2px 6px; border-radius: 4px; border: 1px solid #e2e8f0;">
+                ${item.verificationCode}
+              </span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 0.75rem; color: #64748b;"><i class="fa-regular fa-clock"></i> ${createdDate}</span>
+              ${statusBadgeHtml}
+            </div>
+          </div>
+
+          <div style="font-size: 0.85rem; color: #1e293b;">
+            ${recipientInfoHtml}
+          </div>
+
+          <div style="background: #f8fafc; border-left: 3px solid #3b82f6; border-radius: 4px; padding: 8px 12px; font-size: 0.85rem; color: #334155; line-height: 1.45; white-space: pre-wrap;">${item.message || '<em style="color:#94a3b8;">[No text message, attachments only]</em>'}</div>
+
+          ${attachmentsHtml}
+          ${signedFilesHtml}
+          ${rejectionBoxHtml}
+          ${actionButtonsHtml}
+        `;
+
+        approvalsListContainer.appendChild(card);
+      });
+
+      // Hook up Approve buttons
+      approvalsListContainer.querySelectorAll('.btn-approve-approval').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-id');
+          const ref = btn.getAttribute('data-ref');
+          executeApproveAndSign(id, ref);
+        });
+      });
+
+      // Hook up Reject buttons
+      approvalsListContainer.querySelectorAll('.btn-reject-approval').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-id');
+          if (rejectTargetApprovalId) rejectTargetApprovalId.value = id;
+          if (rejectionRemarksInput) rejectionRemarksInput.value = '';
+          if (rejectRemarksModal) rejectRemarksModal.classList.add('active');
+        });
+      });
+
+      // Hook up Delete buttons
+      approvalsListContainer.querySelectorAll('.btn-delete-approval').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-id');
+          if (confirm('මෙම අනුමැති ඉල්ලීම ඉවත් කිරීමට අවශ්‍ය බව තහවුරු කරන්න?')) {
+            const resDel = await authFetch(`/api/approvals/${id}`, { method: 'DELETE' });
+            if (resDel.ok) {
+              showToast('Approval request removed.', 'info');
+              loadApprovalsList(activeApprovalsTab);
+              updateApprovalsBadge();
+            }
+          }
+        });
+      });
+
+    } catch (err) {
+      console.error('Error loading approvals:', err);
+      approvalsListContainer.innerHTML = `<div style="color: #ef4444; padding: 15px; text-align: center;">Failed to load approvals.</div>`;
+    }
+  }
+
+  async function executeApproveAndSign(id, ref) {
+    if (!isWhatsAppReady) {
+      showToast('WhatsApp is not connected! Please scan QR code first.', 'error');
+      return;
+    }
+
+    if (!confirm(`ප්‍රාදේශීය ලේකම් නිල ඩිජිටල් අත්සන (E-Signature) සහ මුද්‍රාව තබා මෙම ලේඛනය (${ref}) අනුමත කර WhatsApp හරහා යැවීම තහවුරු කරන්නද?`)) {
+      return;
+    }
+
+    showToast('Stamping E-Signature & dispatching WhatsApp message...', 'info');
+
+    try {
+      const res = await authFetch(`/api/approvals/${id}/approve`, { method: 'POST' });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        showToast(data.message || 'Approved & E-Signed successfully!', 'success');
+        switchApprovalsTab('approved');
+        updateApprovalsBadge();
+        loadHistory();
+      } else {
+        showToast(data.error || 'Failed to approve document.', 'error');
+      }
+    } catch (err) {
+      console.error('Approve error:', err);
+      showToast('Network error while approving document.', 'error');
+    }
+  }
+
+  // Reject remarks modal confirm
+  if (confirmRejectBtn) {
+    confirmRejectBtn.addEventListener('click', async () => {
+      const id = rejectTargetApprovalId ? rejectTargetApprovalId.value : null;
+      const remarks = rejectionRemarksInput ? rejectionRemarksInput.value.trim() : '';
+      if (!id) return;
+      if (!remarks) {
+        showToast('Please enter a rejection remark.', 'error');
+        return;
+      }
+
+      confirmRejectBtn.disabled = true;
+      confirmRejectBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Submitting...`;
+
+      try {
+        const res = await authFetch(`/api/approvals/${id}/reject`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ remarks })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast(data.message || 'Returned with remarks.', 'info');
+          if (rejectRemarksModal) rejectRemarksModal.classList.remove('active');
+          switchApprovalsTab('rejected');
+          updateApprovalsBadge();
+        } else {
+          showToast(data.error || 'Failed to reject approval.', 'error');
+        }
+      } catch (e) {
+        showToast('Network error while rejecting.', 'error');
+      } finally {
+        confirmRejectBtn.disabled = false;
+        confirmRejectBtn.innerHTML = `<i class="fa-solid fa-paper-plane"></i> සටහන සමඟ හරවා යවන්න`;
+      }
+    });
+  }
+
+  if (closeRejectModalBtn) closeRejectModalBtn.addEventListener('click', () => rejectRemarksModal.classList.remove('active'));
+  if (cancelRejectModalBtn) cancelRejectModalBtn.addEventListener('click', () => rejectRemarksModal.classList.remove('active'));
+
+  // Approvals Modal Open / Close Handlers
+  if (openApprovalsBtn) {
+    openApprovalsBtn.addEventListener('click', () => {
+      switchApprovalsTab('pending');
+      approvalsModal.classList.add('active');
+    });
+  }
+
+  if (openMyApprovalsBtn) {
+    openMyApprovalsBtn.addEventListener('click', () => {
+      switchApprovalsTab('pending');
+      approvalsModal.classList.add('active');
+    });
+  }
+
+  if (closeApprovalsModalBtn) closeApprovalsModalBtn.addEventListener('click', () => approvalsModal.classList.remove('active'));
+  if (closeApprovalsModalBtn2) closeApprovalsModalBtn2.addEventListener('click', () => approvalsModal.classList.remove('active'));
+  if (refreshApprovalsListBtn) refreshApprovalsListBtn.addEventListener('click', () => loadApprovalsList(activeApprovalsTab));
 
   // Initialize Session Check
   checkSession();
