@@ -1971,7 +1971,15 @@ function getVerificationHtml(code, found) {
 
     <div class="card-footer">
       <div>🏛️ බණ්ඩාරවෙල ප්‍රාදේශීය ලේකම් කාර්යාලය • දුරකථන: 057-2222235 • ඊමේල්: dsbandarawela@gmail.com</div>
-      <div style="margin-top: 4px; color: #94a3b8;">National Productivity & E-Governance Document Authentication System © 2026</div>
+      <div style="margin-top: 6px; font-weight: 700; color: #1e293b; font-size: 0.85rem; letter-spacing: 0.5px;">
+        <i class="fa-solid fa-laptop-code" style="color: #2563eb;"></i> IT Unit BW DS @2026
+      </div>
+      <div style="margin-top: 6px;">
+        <a href="https://bandarawela-staff-directory.vercel.app/" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: none; font-size: 0.8rem; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;">
+          <i class="fa-solid fa-users"></i> Online Staff Directory Portal <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 0.65rem;"></i>
+        </a>
+      </div>
+      <div style="margin-top: 4px; color: #94a3b8; font-size: 0.72rem;">National Productivity & E-Governance Document Authentication System</div>
     </div>
   </div>
 </body>
