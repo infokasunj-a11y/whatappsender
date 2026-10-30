@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const multer = require('multer');
 const QRCode = require('qrcode');
 const pino = require('pino');
@@ -1133,10 +1134,109 @@ app.delete('/api/history/:id', requireAuth, (req, res) => {
 });
 
 // ==========================================
+// BACKUP & RESTORE SYSTEM
+// ==========================================
+const backupsDir = path.join(__dirname, 'backups');
+if (!fs.existsSync(backupsDir)) fs.mkdirSync(backupsDir, { recursive: true });
+
+function createSystemSnapshot(label = 'auto') {
+  try {
+    const snapshot = {
+      appName: 'Divisional Secretariat Bandarawela - Office WhatsApp & E-Sign System',
+      version: '1.0',
+      label,
+      timestamp: new Date().toISOString(),
+      data: {
+        officers: readJSON(OFFICERS_FILE, []),
+        customers: readJSON(CUSTOMERS_FILE, []),
+        history: readJSON(HISTORY_FILE, []),
+        users: readJSON(USERS_FILE, []),
+        approvals: readJSON(APPROVALS_FILE, []),
+        scheduled: readJSON(SCHEDULED_FILE, []),
+        settings: readJSON(SETTINGS_FILE, {})
+      }
+    };
+
+    const cleanTime = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = `backup_${label}_${cleanTime}.json`;
+    const filePath = path.join(backupsDir, filename);
+    fs.writeFileSync(filePath, JSON.stringify(snapshot, null, 2));
+
+    // Keep only latest 25 snapshots to avoid disk clutter
+    const allFiles = fs.readdirSync(backupsDir).filter(f => f.startsWith('backup_') && f.endsWith('.json'));
+    if (allFiles.length > 25) {
+      allFiles.sort().slice(0, allFiles.length - 25).forEach(f => {
+        try { fs.unlinkSync(path.join(backupsDir, f)); } catch(e) {}
+      });
+    }
+
+    console.log(`[Backup] System snapshot created: ${filename}`);
+    return { filename, filePath };
+  } catch (err) {
+    console.error('[Backup Error] Failed to create snapshot:', err.message);
+    return null;
+  }
+}
+
+// Initial snapshot on server launch
+createSystemSnapshot('startup');
+// Periodic hourly snapshot
+setInterval(() => { createSystemSnapshot('hourly'); }, 60 * 60 * 1000);
+
+// ==========================================
+// NETWORK IP & VERIFICATION URL RESOLVER
+// ==========================================
+
+function getLocalNetworkIp() {
+  try {
+    const interfaces = os.networkInterfaces();
+    for (const devName in interfaces) {
+      const iface = interfaces[devName];
+      for (let i = 0; i < iface.length; i++) {
+        const alias = iface[i];
+        if (alias.family === 'IPv4' && !alias.internal && alias.address !== '127.0.0.1') {
+          return alias.address;
+        }
+      }
+    }
+  } catch (e) {}
+  return '10.7.108.15';
+}
+
+function getPublicServerBaseUrl(req) {
+  // 1. Check if publicVerifyUrl is explicitly set in settings
+  const settings = readJSON(SETTINGS_FILE, {});
+  if (settings.publicVerifyUrl && settings.publicVerifyUrl.trim()) {
+    return settings.publicVerifyUrl.trim().replace(/\/+$/, '');
+  }
+
+  // 2. Check environment variables
+  if (process.env.PUBLIC_VERIFY_URL) {
+    return process.env.PUBLIC_VERIFY_URL.trim().replace(/\/+$/, '');
+  }
+  if (process.env.RENDER_EXTERNAL_URL) {
+    return process.env.RENDER_EXTERNAL_URL.trim().replace(/\/+$/, '');
+  }
+
+  // 3. Fallback: Always use computer's Wi-Fi / LAN IP so smartphones on Wi-Fi can scan and open it!
+  const lanIp = getLocalNetworkIp();
+  const host = (req && req.get) ? req.get('host') : '';
+  const port = (host && host.includes(':')) ? host.split(':')[1] : (process.env.PORT || 3000);
+
+  // If request came from a real public domain / tunnel, preserve it
+  if (host && !host.includes('localhost') && !host.includes('127.0.0.1') && !host.startsWith('10.') && !host.startsWith('192.168.')) {
+    const protocol = (req && req.secure) ? 'https' : 'http';
+    return `${protocol}://${host}`;
+  }
+
+  return `http://${lanIp}:${port}`;
+}
+
+// ==========================================
 // --- E-SIGNATURE & DS APPROVAL PIPELINE ---
 // ==========================================
 
-async function stampPdfWithDsSignature(inputPdfPath, verificationCode, approvalDateStr) {
+async function stampPdfWithDsSignature(inputPdfPath, verificationCode, approvalDateStr, customPos = null, req = null) {
   try {
     if (!fs.existsSync(inputPdfPath)) {
       console.error('Input PDF not found:', inputPdfPath);
@@ -1159,14 +1259,27 @@ async function stampPdfWithDsSignature(inputPdfPath, verificationCode, approvalD
     const sigImageBytes = fs.readFileSync(DS_SIGNATURE_FILE);
     const sigImage = await pdfDoc.embedJpg(sigImageBytes);
 
-    // Official dimensions (aspect ratio preserved, width: 165 pt, height: ~98 pt)
-    const sigWidth = 165;
+    // Official dimensions (signature width 135 pt)
+    const sigWidth = 135;
     const sigHeight = (sigImage.height / sigImage.width) * sigWidth;
+    const qrSize = 44; // 44 pt square QR code
+    const totalBoxWidth = sigWidth + 8 + qrSize;
 
-    // Position: 1 inch from left side (72 pt), 3 inches from bottom (216 pt)
-    const sigX = 72; // 1 inch from left edge
-    const sigY = 216; // 3 inches from bottom edge
+    // Position: Custom Position (if provided) or Default (Left 1 inch / 72 pt, Bottom 3 inches / 216 pt)
+    let sigX = 72; // default 1 inch from left
+    let sigY = 216; // default 3 inches from bottom
 
+    if (customPos) {
+      if (typeof customPos.xPercent === 'number' && typeof customPos.yPercent === 'number') {
+        sigX = Math.max(10, Math.min(width - totalBoxWidth - 10, (customPos.xPercent / 100) * width));
+        sigY = Math.max(25, Math.min(height - sigHeight - 20, height - ((customPos.yPercent / 100) * height) - sigHeight));
+      } else if (typeof customPos.x === 'number' && typeof customPos.y === 'number') {
+        sigX = Math.max(10, Math.min(width - totalBoxWidth - 10, customPos.x));
+        sigY = Math.max(25, Math.min(height - sigHeight - 20, customPos.y));
+      }
+    }
+
+    // 1. Draw Signature & Official Seal
     lastPage.drawImage(sigImage, {
       x: sigX,
       y: sigY,
@@ -1174,7 +1287,44 @@ async function stampPdfWithDsSignature(inputPdfPath, verificationCode, approvalD
       height: sigHeight
     });
 
-    // Verification metadata texts
+    // 2. Generate Verification QR Code (Accessible by any mobile phone on Wi-Fi or Internet)
+    let qrImage = null;
+    const qrX = sigX + sigWidth + 6;
+    const qrY = sigY + (sigHeight - qrSize) / 2;
+
+    try {
+      const baseUrl = getPublicServerBaseUrl(req);
+      const verifyUrl = `${baseUrl}/verify/${verificationCode || 'BDS-APP'}`;
+      console.log(`[E-Signature] QR Code generated with Target URL: ${verifyUrl}`);
+
+      const qrBuffer = await QRCode.toBuffer(verifyUrl, {
+        type: 'png',
+        width: 140,
+        margin: 1,
+        color: { dark: '#0f172a', light: '#ffffff' }
+      });
+      qrImage = await pdfDoc.embedPng(qrBuffer);
+
+      lastPage.drawImage(qrImage, {
+        x: qrX,
+        y: qrY,
+        width: qrSize,
+        height: qrSize
+      });
+
+      const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+      lastPage.drawText('Scan to Verify', {
+        x: qrX + 2,
+        y: qrY - 7,
+        size: 5,
+        font: helveticaBold,
+        color: rgb(0.12, 0.28, 0.55)
+      });
+    } catch (qrErr) {
+      console.error('[E-Signature] Failed to generate QR code on PDF:', qrErr.message);
+    }
+
+    // 3. Verification metadata texts under signature
     const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
@@ -1206,7 +1356,7 @@ async function stampPdfWithDsSignature(inputPdfPath, verificationCode, approvalD
     const signedPdfPath = path.join(dir, signedFileName);
 
     fs.writeFileSync(signedPdfPath, modifiedPdfBytes);
-    console.log(`[E-Signature] Successfully stamped PDF: ${signedFileName}`);
+    console.log(`[E-Signature] Successfully stamped PDF with DS Seal & QR Code: ${signedFileName}`);
     return signedPdfPath;
   } catch (err) {
     console.error('Error stamping PDF with DS signature:', err);
@@ -1299,8 +1449,8 @@ app.post('/api/approvals/request', requireAuth, uploadMiddleware, async (req, re
           if (dsJid) {
             const shortMsg = message ? (message.length > 120 ? message.substring(0, 120) + '...' : message) : '[ලිපිගොනු සහ PDF පමණි]';
             const alertMsg = `🔔 *නව අනුමැති ඉල්ලීමක් (New Approval Request)*\n🏛️ *ප්‍රාදේශීය ලේකම් කාර්යාලය - බණ්ඩාරවෙල*\n*(Divisional Secretariat - Bandarawela)*\n━━━━━━━━━━━━━━━━━━━━\n📂 *ඉදිරිපත් කළ අංශය:* ${req.user.name}\n📑 *අනුමැති අංකය (Ref):* ${verificationCode}\n📅 *දිනය සහ වේලාව:* ${new Date().toLocaleString('si-LK')}\n📝 *විස්තරය:* ${shortMsg}\n📎 *අමුණා ඇති ලිපි:* ${attachments.length} Document(s)\n━━━━━━━━━━━━━━━━━━━━\n👉 *අනුමත කිරීම සඳහා කරුණාකර පද්ධතියට (Approval Hub) පිවිසෙන්න.*`;
-            await sock.sendMessage(dsJid, { text: alertMsg });
-            console.log(`[DS Alert Sent] WhatsApp ping delivered to DS (${settings.dsPhone}) for ${verificationCode}`);
+            await sendBaileysMessageWithAttachments(dsJid, alertMsg, uploadedFiles);
+            console.log(`[DS Alert Sent] WhatsApp ping delivered to DS (${settings.dsPhone}) with ${uploadedFiles.length} file(s) for ${verificationCode}`);
           }
         }
       } catch (alertErr) {
@@ -1408,7 +1558,8 @@ app.post('/api/approvals/:id/approve', requireAuth, async (req, res) => {
 
         if (isPdf && filePath && fs.existsSync(filePath)) {
           console.log(`[E-Signature] Stamping PDF for approval ${approval.verificationCode}...`);
-          const stampedPath = await stampPdfWithDsSignature(filePath, approval.verificationCode, approvalDateStr);
+          const customPos = req.body && req.body.customPos ? req.body.customPos : null;
+          const stampedPath = await stampPdfWithDsSignature(filePath, approval.verificationCode, approvalDateStr, customPos, req);
           const stampedFilename = path.basename(stampedPath);
           finalAttachments.push({
             path: stampedPath,
@@ -1500,6 +1651,7 @@ app.post('/api/approvals/:id/approve', requireAuth, async (req, res) => {
 
     // Update approval record
     approval.status = 'approved';
+    if (req.body && req.body.customPos) approval.customPos = req.body.customPos;
     approval.reviewedAt = approvalDate.toISOString();
     approval.reviewedBy = {
       username: req.user.username,
@@ -1587,21 +1739,428 @@ app.delete('/api/approvals/:id', requireAuth, (req, res) => {
 
 // --- SETTINGS API ---
 app.get('/api/settings', requireAuth, (req, res) => {
-  const settings = readJSON(SETTINGS_FILE, { dsPhone: '0714435277', enableDsAlerts: true });
-  res.json(settings);
+  const settings = readJSON(SETTINGS_FILE, { dsPhone: '0714435277', enableDsAlerts: true, publicVerifyUrl: '' });
+  const lanIp = getLocalNetworkIp();
+  res.json({
+    ...settings,
+    lanIp,
+    detectedBaseUrl: `http://${lanIp}:${PORT}`
+  });
 });
 
 app.post('/api/settings', requireAuth, (req, res) => {
   if (req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Access denied. Only Divisional Secretary (Admin) can update alert settings.' });
   }
-  const { dsPhone, enableDsAlerts } = req.body;
-  const settings = readJSON(SETTINGS_FILE, { dsPhone: '0714435277', enableDsAlerts: true });
+  const { dsPhone, enableDsAlerts, publicVerifyUrl } = req.body;
+  const settings = readJSON(SETTINGS_FILE, { dsPhone: '0714435277', enableDsAlerts: true, publicVerifyUrl: '' });
   if (dsPhone !== undefined) settings.dsPhone = String(dsPhone).trim();
   if (enableDsAlerts !== undefined) settings.enableDsAlerts = Boolean(enableDsAlerts);
+  if (publicVerifyUrl !== undefined) settings.publicVerifyUrl = String(publicVerifyUrl).trim();
   writeJSON(SETTINGS_FILE, settings);
-  console.log(`[Settings] DS WhatsApp Alert updated: Phone=${settings.dsPhone}, Enabled=${settings.enableDsAlerts}`);
-  res.json({ success: true, message: 'Alert settings updated successfully!', settings });
+  console.log(`[Settings] Updated: Phone=${settings.dsPhone}, Alerts=${settings.enableDsAlerts}, PublicVerifyUrl=${settings.publicVerifyUrl}`);
+  res.json({ success: true, message: 'Settings updated successfully!', settings });
+});
+
+// ==========================================
+// PUBLIC DOCUMENT VERIFICATION PORTAL
+// ==========================================
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function getVerificationHtml(code, found) {
+  const isFound = !!found;
+  const isCodeEntered = !!code;
+
+  let detailsHtml = '';
+  if (isFound) {
+    const createdDate = new Date(found.reviewedAt || found.createdAt).toLocaleString('en-GB');
+    const secName = found.requestedBy ? (found.requestedBy.name || found.requestedBy.username) : 'General Administration';
+    const recName = found.recipient ? `${found.recipient.name} (${found.recipient.phone})` : (found.isBulk ? `කණ්ඩායම් පණිවිඩයක් (${(found.recipients || []).length} දෙනෙකු වෙත)` : 'අභ්‍යන්තර කාර්යාල ලේඛනය (Internal Document)');
+    const fileNo = (found.recipient && found.recipient.fileNo) ? found.recipient.fileNo : 'නැත (N/A)';
+    const signedPdfUrl = (found.signedFiles && found.signedFiles.length > 0) ? found.signedFiles[0].url : null;
+
+    detailsHtml = `
+      <div class="status-banner valid">
+        <div class="status-icon"><i class="fa-solid fa-circle-check"></i></div>
+        <div>
+          <h2 style="margin: 0; font-size: 1.15rem; color: #166534;">නිල වශයෙන් සත්‍යාපිතයි (Officially Authenticated)</h2>
+          <p style="margin: 3px 0 0 0; font-size: 0.85rem; color: #15803d;">මෙම ලේඛනය බණ්ඩාරවෙල ප්‍රාදේශීය ලේකම් කාර්යාලය මඟින් නිකුත් කරන ලද සත්‍ය රාජ්‍ය ලේඛනයකි.</p>
+        </div>
+      </div>
+
+      <div class="info-grid">
+        <div class="info-row">
+          <span class="info-label"><i class="fa-solid fa-barcode"></i> අනුමැති අංකය (Verification Ref):</span>
+          <span class="info-val ref-badge">${escapeHtml(found.verificationCode)}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label"><i class="fa-solid fa-building-columns"></i> නිකුත් කළ අංශය (Issuing Section):</span>
+          <span class="info-val"><strong>${escapeHtml(secName)}</strong></span>
+        </div>
+        <div class="info-row">
+          <span class="info-label"><i class="fa-solid fa-signature"></i> අනුමත කළ බලධාරියා (Approving Officer):</span>
+          <span class="info-val"><strong>අයි.ජී.අයි.ටී. රත්නායක</strong><br><small style="color: #64748b;">ප්‍රාදේශීය ලේකම්, බණ්ඩාරවෙල (Divisional Secretary)</small></span>
+        </div>
+        <div class="info-row">
+          <span class="info-label"><i class="fa-solid fa-calendar-check"></i> අනුමත කළ දිනය හා වේලාව:</span>
+          <span class="info-val">${createdDate}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label"><i class="fa-solid fa-user-check"></i> ලබන්නා (Recipient / Destination):</span>
+          <span class="info-val">${escapeHtml(recName)}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label"><i class="fa-solid fa-folder-open"></i> අදාළ ලිපිගොනු අංකය (File No):</span>
+          <span class="info-val">${escapeHtml(fileNo)}</span>
+        </div>
+      </div>
+
+      <div style="margin-top: 18px;">
+        <label style="font-size: 0.82rem; font-weight: 700; color: #475569; display: block; margin-bottom: 6px;"><i class="fa-solid fa-envelope-open-text"></i> ලේඛනයේ අන්තර්ගත සාරාංශය (Subject / Excerpt):</label>
+        <div class="message-box">${escapeHtml(found.message || '[ලේඛනය පමණක් අමුණා ඇත]')}</div>
+      </div>
+
+      ${signedPdfUrl ? `
+        <div style="margin-top: 20px; text-align: center;">
+          <a href="${signedPdfUrl}" target="_blank" class="btn-download-pdf">
+            <i class="fa-solid fa-file-pdf"></i> අත්සන් කළ නිල PDF ලේඛනය බලන්න (View Official Signed PDF)
+          </a>
+        </div>
+      ` : ''}
+
+      <div class="disclaimer-card">
+        <i class="fa-solid fa-shield-halved" style="color: #2563eb; font-size: 1.3rem;"></i>
+        <div style="font-size: 0.78rem; color: #475569; line-height: 1.45;">
+          <strong>ඩිජිටල් ආරක්ෂණ සටහන:</strong> මෙම ලේඛනයේ සත්‍යතාව බණ්ඩාරවෙල ප්‍රාදේශීය ලේකම් කාර්යාලීය ඩිජිටල් පද්ධතිය (E-Governance System) මඟින් සනාථ කෙරේ. මෙහි අන්තර්ගතය වෙනස් කළ නොහැකි ලෙස සුරක්ෂිතව පවතී.
+        </div>
+      </div>
+    `;
+  } else if (isCodeEntered) {
+    detailsHtml = `
+      <div class="status-banner invalid">
+        <div class="status-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+        <div>
+          <h2 style="margin: 0; font-size: 1.1rem; color: #991b1b;">වලංගු නොවන හෝ හඳුනානොගත් ලේඛන අංකයකි</h2>
+          <p style="margin: 4px 0 0 0; font-size: 0.85rem; color: #b91c1c;">"<strong>${escapeHtml(code)}</strong>" අංකය සඳහා බණ්ඩාරවෙල ප්‍රාදේශීය ලේකම් කාර්යාලීය ඩිජිටල් අනුමැති වාර්තාවක් හමු නොවීය. කරුණාකර අංකය නිවැරදිදැයි නැවත පරීක්ෂා කරන්න.</p>
+        </div>
+      </div>
+    `;
+  } else {
+    detailsHtml = `
+      <div style="text-align: center; padding: 25px 15px; color: #64748b;">
+        <i class="fa-solid fa-qrcode" style="font-size: 3rem; color: #94a3b8; margin-bottom: 12px; display: block;"></i>
+        <p style="margin: 0; font-size: 0.95rem;">ප්‍රාදේශීය ලේකම් කාර්යාලය මඟින් නිකුත් කළ ලිපියේ හෝ PDF එකේ ඇති <b>QR කේතය Scan කරන්න</b>, නැතහොත් අනුමැති අංකය (Ref Number) ඉහත සටහන් කර සත්‍යාපනය කරන්න.</p>
+      </div>
+    `;
+  }
+
+  return `<!DOCTYPE html>
+<html lang="si">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>රාජ්‍ය ඩිජිටල් ලේඛන සත්‍යාපනය | Divisional Secretariat Bandarawela</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 20px 15px;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: #f1f5f9; color: #1e293b;
+      min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    }
+    .gov-flag-bar {
+      position: fixed; top: 0; left: 0; right: 0; height: 5px;
+      background: linear-gradient(90deg, #8d1b3d 0%, #8d1b3d 35%, #ffbe29 35%, #ffbe29 55%, #005f43 55%, #005f43 75%, #df742c 75%, #df742c 100%);
+      z-index: 100;
+    }
+    .main-card {
+      background: #ffffff; width: 100%; max-width: 660px;
+      border-radius: 12px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.08), 0 8px 10px -6px rgba(0,0,0,0.05);
+      border: 1px solid #e2e8f0; overflow: hidden; margin-top: 15px;
+    }
+    .card-header {
+      background: #0f172a; color: #ffffff; padding: 22px 20px; text-align: center;
+      border-bottom: 3px solid #2563eb;
+    }
+    .card-body { padding: 24px 22px; }
+    .search-box {
+      display: flex; gap: 8px; margin-bottom: 20px;
+    }
+    .search-input {
+      flex: 1; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 8px;
+      font-size: 0.95rem; font-family: monospace; font-weight: 600;
+      text-transform: uppercase;
+    }
+    .search-input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.15); }
+    .search-btn {
+      background: #2563eb; color: #fff; border: none; padding: 10px 18px; border-radius: 8px;
+      font-weight: 600; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; gap: 6px;
+    }
+    .search-btn:hover { background: #1d4ed8; }
+    .status-banner {
+      display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-radius: 8px; margin-bottom: 18px;
+    }
+    .status-banner.valid { background: #f0fdf4; border: 1px solid #bbf7d0; }
+    .status-banner.invalid { background: #fef2f2; border: 1px solid #fecaca; }
+    .status-icon { font-size: 1.8rem; }
+    .status-banner.valid .status-icon { color: #16a34a; }
+    .status-banner.invalid .status-icon { color: #dc2626; }
+    .info-grid {
+      display: flex; flex-direction: column; gap: 10px; background: #f8fafc; padding: 14px; border-radius: 8px; border: 1px solid #e2e8f0;
+    }
+    .info-row {
+      display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; font-size: 0.88rem;
+      border-bottom: 1px dashed #e2e8f0; padding-bottom: 8px;
+    }
+    .info-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .info-label { color: #64748b; font-weight: 600; min-width: 170px; display: flex; align-items: center; gap: 6px; }
+    .info-val { color: #0f172a; text-align: right; }
+    .ref-badge { font-family: monospace; font-weight: 700; background: #eff6ff; color: #1d4ed8; padding: 2px 8px; border-radius: 4px; border: 1px solid #bfdbfe; font-size: 0.95rem; }
+    .message-box {
+      background: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #2563eb;
+      padding: 12px; border-radius: 6px; font-size: 0.86rem; color: #334155; line-height: 1.5;
+    }
+    .btn-download-pdf {
+      display: inline-flex; align-items: center; gap: 8px; background: #16a34a; color: #ffffff;
+      padding: 11px 22px; border-radius: 8px; font-weight: 700; text-decoration: none; font-size: 0.92rem;
+      box-shadow: 0 4px 12px rgba(22,163,74,0.3); transition: all 0.2s;
+    }
+    .btn-download-pdf:hover { background: #15803d; transform: translateY(-1px); }
+    .disclaimer-card {
+      margin-top: 22px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;
+      padding: 12px 14px; display: flex; gap: 10px; align-items: center;
+    }
+    .card-footer {
+      background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 14px 20px; text-align: center;
+      font-size: 0.76rem; color: #64748b;
+    }
+  </style>
+</head>
+<body>
+  <div class="gov-flag-bar"></div>
+
+  <div class="main-card">
+    <div class="card-header">
+      <div style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px; color: #cbd5e1; margin-bottom: 4px;">ශ්‍රී ලංකා ප්‍රජාතාන්ත්‍රික සමාජවාදී ජනරජය</div>
+      <h1 style="margin: 0; font-size: 1.25rem; font-weight: 700;">ප්‍රාදේශීය ලේකම් කාර්යාලය - බණ්ඩාරවෙල</h1>
+      <div style="font-size: 0.85rem; color: #94a3b8; margin-top: 2px;">Divisional Secretariat - Bandarawela</div>
+      <div style="display: inline-block; margin-top: 10px; background: rgba(37,99,235,0.25); border: 1px solid #3b82f6; color: #93c5fd; padding: 3px 12px; border-radius: 12px; font-size: 0.75rem; font-weight: 600;">
+        <i class="fa-solid fa-certificate"></i> නිල ඩිජිටල් ලේඛන සත්‍යාපන ද්වාරය (Document Verification Portal)
+      </div>
+    </div>
+
+    <div class="card-body">
+      <form action="/verify" method="GET" class="search-box">
+        <input type="text" name="code" class="search-input" placeholder="BDS-2026-APP-xxxx" value="${escapeHtml(code || '')}" required>
+        <button type="submit" class="search-btn"><i class="fa-solid fa-magnifying-glass"></i> සත්‍යාපනය</button>
+      </form>
+
+      ${detailsHtml}
+    </div>
+
+    <div class="card-footer">
+      <div>🏛️ බණ්ඩාරවෙල ප්‍රාදේශීය ලේකම් කාර්යාලය • දුරකථන: 057-2222235 • ඊමේල්: dsbandarawela@gmail.com</div>
+      <div style="margin-top: 4px; color: #94a3b8;">National Productivity & E-Governance Document Authentication System © 2026</div>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+// Verification Web Routes
+app.get(['/verify', '/verify/:code'], (req, res) => {
+  const code = (req.params.code || req.query.code || '').trim().toUpperCase();
+  const approvals = readJSON(APPROVALS_FILE, []);
+  let found = null;
+  if (code) {
+    found = approvals.find(a => a.verificationCode && a.verificationCode.toUpperCase() === code);
+  }
+
+  const html = getVerificationHtml(code, found);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(html);
+});
+
+// Verification API Endpoint
+app.get('/api/verify/:code', (req, res) => {
+  const code = (req.params.code || '').trim().toUpperCase();
+  const approvals = readJSON(APPROVALS_FILE, []);
+  const found = approvals.find(a => a.verificationCode && a.verificationCode.toUpperCase() === code);
+  if (!found) {
+    return res.status(404).json({ valid: false, error: 'Document not found or invalid reference number.' });
+  }
+  res.json({
+    valid: true,
+    verificationCode: found.verificationCode,
+    status: found.status,
+    createdAt: found.createdAt,
+    reviewedAt: found.reviewedAt,
+    requestedBy: found.requestedBy,
+    recipient: found.recipient,
+    signedFiles: found.signedFiles
+  });
+});
+
+// ==========================================
+// BACKUP & RESTORE API ROUTES (Admin Only)
+// ==========================================
+
+// 1. Download Backup JSON File
+app.get('/api/backup/download', requireAuth, (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Access denied. Administrator privileges required.' });
+  }
+
+  const snapshot = {
+    appName: 'Divisional Secretariat Bandarawela - Office WhatsApp & E-Sign System',
+    version: '1.0',
+    label: 'manual_export',
+    timestamp: new Date().toISOString(),
+    data: {
+      officers: readJSON(OFFICERS_FILE, []),
+      customers: readJSON(CUSTOMERS_FILE, []),
+      history: readJSON(HISTORY_FILE, []),
+      users: readJSON(USERS_FILE, []),
+      approvals: readJSON(APPROVALS_FILE, []),
+      scheduled: readJSON(SCHEDULED_FILE, []),
+      settings: readJSON(SETTINGS_FILE, {})
+    }
+  };
+
+  const filename = `ds_bandarawela_backup_${new Date().toISOString().slice(0, 10)}.json`;
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(JSON.stringify(snapshot, null, 2));
+});
+
+// 2. List Local Snapshots
+app.get('/api/backup/snapshots', requireAuth, (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Access denied.' });
+  }
+
+  try {
+    const files = fs.readdirSync(backupsDir)
+      .filter(f => f.startsWith('backup_') && f.endsWith('.json'))
+      .map(filename => {
+        const filePath = path.join(backupsDir, filename);
+        const stats = fs.statSync(filePath);
+        return {
+          filename,
+          size: stats.size,
+          createdAt: stats.mtime.toISOString()
+        };
+      })
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    res.json(files);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 3. Create Manual Snapshot Now
+app.post('/api/backup/snapshot', requireAuth, (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Access denied.' });
+  }
+  const result = createSystemSnapshot('manual');
+  if (result) {
+    res.json({ success: true, message: 'නව Safety Snapshot එකක් සාර්ථකව සාදන ලදී!', filename: result.filename });
+  } else {
+    res.status(500).json({ error: 'Snapshot එක සෑදීම අසාර්ථක විය.' });
+  }
+});
+
+// 4. Restore from Local Snapshot
+app.post('/api/backup/restore-snapshot', requireAuth, (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Access denied.' });
+  }
+
+  const { filename } = req.body;
+  if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+    return res.status(400).json({ error: 'Invalid snapshot filename.' });
+  }
+
+  const targetPath = path.join(backupsDir, filename);
+  if (!fs.existsSync(targetPath)) {
+    return res.status(404).json({ error: 'Snapshot file not found.' });
+  }
+
+  try {
+    const content = JSON.parse(fs.readFileSync(targetPath, 'utf8'));
+    const d = content.data || content;
+
+    if (!d) {
+      return res.status(400).json({ error: 'Invalid backup file content.' });
+    }
+
+    // Safety snapshot before restoring
+    createSystemSnapshot('before_restore');
+
+    if (Array.isArray(d.officers)) writeJSON(OFFICERS_FILE, d.officers);
+    if (Array.isArray(d.customers)) writeJSON(CUSTOMERS_FILE, d.customers);
+    if (Array.isArray(d.history)) writeJSON(HISTORY_FILE, d.history);
+    if (Array.isArray(d.users)) writeJSON(USERS_FILE, d.users);
+    if (Array.isArray(d.approvals)) writeJSON(APPROVALS_FILE, d.approvals);
+    if (Array.isArray(d.scheduled)) writeJSON(SCHEDULED_FILE, d.scheduled);
+    if (d.settings && typeof d.settings === 'object') writeJSON(SETTINGS_FILE, d.settings);
+
+    res.json({ success: true, message: 'Snapshot එක සාර්ථකව ප්‍රතිස්ථාපනය (Restore) කරන ලදී!' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to restore snapshot: ' + err.message });
+  }
+});
+
+// 5. Restore from Uploaded JSON File
+app.post('/api/backup/restore-file', requireAuth, upload.single('backupFile'), (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Access denied.' });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({ error: 'Please upload a backup JSON file.' });
+  }
+
+  try {
+    const raw = fs.readFileSync(req.file.path, 'utf8');
+    const content = JSON.parse(raw);
+    const d = content.data || content;
+
+    if (!d || (!Array.isArray(d.users) && !Array.isArray(d.officers) && !Array.isArray(d.customers))) {
+      return res.status(400).json({ error: 'Invalid backup file format. Expected system data structure.' });
+    }
+
+    // Safety snapshot before restoring
+    createSystemSnapshot('before_restore_upload');
+
+    if (Array.isArray(d.officers)) writeJSON(OFFICERS_FILE, d.officers);
+    if (Array.isArray(d.customers)) writeJSON(CUSTOMERS_FILE, d.customers);
+    if (Array.isArray(d.history)) writeJSON(HISTORY_FILE, d.history);
+    if (Array.isArray(d.users)) writeJSON(USERS_FILE, d.users);
+    if (Array.isArray(d.approvals)) writeJSON(APPROVALS_FILE, d.approvals);
+    if (Array.isArray(d.scheduled)) writeJSON(SCHEDULED_FILE, d.scheduled);
+    if (d.settings && typeof d.settings === 'object') writeJSON(SETTINGS_FILE, d.settings);
+
+    // Clean up uploaded file
+    try { fs.unlinkSync(req.file.path); } catch(e) {}
+
+    res.json({ success: true, message: 'Backup ගොනුව සාර්ථකව ප්‍රතිස්ථාපනය (Restore) කරන ලදී!' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to restore backup file: ' + err.message });
+  }
 });
 
 // Start Express Server with EADDRINUSE graceful fallback
