@@ -19,12 +19,15 @@
         <img src="/logo.jpg" alt="Bandarawela Divisional Secretariat Logo" class="brand-logo">
         <div>
           <h1>Bandarawela Divisional Secretariat</h1>
-          <span class="subtitle">Office WhatsApp Dispatcher</span>
+          <span class="subtitle">Office WhatsApp Dispatcher <span class="creator-badge"><i class="fa-solid fa-laptop-code"></i> Created by IT Unit BW DS</span></span>
         </div>
       </div>
       
       <!-- WhatsApp Live Status Widget & User Badge -->
       <div class="header-right-group">
+        <a href="https://bandarawela-staff-directory.vercel.app/" target="_blank" rel="noopener noreferrer" class="btn btn-sm" id="navGlobalStaffDirBtn" title="Bandarawela DS Online Staff Directory (PWA)" style="text-decoration: none; background: #f0fdf4; color: #166534; border: 1.5px solid #86efac; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); font-size: 0.84rem;">
+          <i class="fa-solid fa-users"></i> Staff Directory <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 0.7rem; opacity: 0.85;"></i>
+        </a>
         <div class="user-badge" id="userBadge" style="display: none;">
           <i class="fa-solid fa-user-shield"></i> <span id="userName">Section Head</span>
           <button class="btn btn-sm btn-icon" id="openApprovalsBtn" title="DS Approvals & Signatures (Admin Only)" style="display: none; margin-left: 6px; background: #fef3c7; color: #b45309; border: 1px solid #fcd34d; font-weight: 600;">
@@ -36,6 +39,7 @@
           <button class="btn btn-sm btn-icon" id="manageSectionsBtn" title="Manage Section Accounts (Admin Only)" style="display: none; margin-left: 4px;"><i class="fa-solid fa-users-gear"></i> Sections</button>
           <button class="btn btn-sm btn-icon" id="openBackupBtn" title="System Backup & Restore (Admin Only)" style="display: none; margin-left: 4px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-weight: 600;"><i class="fa-solid fa-cloud-arrow-down"></i> Backup</button>
           <a href="/verify" target="_blank" class="btn btn-sm btn-icon" id="navVerifyBtn" title="Document Verification Portal" style="margin-left: 4px; text-decoration: none; background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-shield-check"></i> Verify Portal</a>
+          <a href="https://bandarawela-staff-directory.vercel.app/" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-icon" id="navExternalStaffDirBtn" title="Bandarawela DS Online Staff Directory (PWA)" style="margin-left: 4px; text-decoration: none; background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;"><i class="fa-solid fa-users-viewfinder"></i> Staff Directory <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 0.68rem; opacity: 0.85;"></i></a>
           <button class="btn btn-sm btn-icon" id="openChangePassBtn" title="Change Password"><i class="fa-solid fa-key"></i></button>
           <button class="btn btn-sm btn-danger" id="userLogoutBtn" title="Logout / Switch Account" style="margin-left: 6px;">
             <i class="fa-solid fa-right-from-bracket"></i> Logout
@@ -102,13 +106,21 @@
           <button class="tab-btn" id="tabCustomersBtn">
             <i class="fa-solid fa-folder-open"></i> Customer Files
           </button>
+          <a href="https://bandarawela-staff-directory.vercel.app/" target="_blank" rel="noopener noreferrer" class="tab-btn tab-btn-external" style="text-decoration: none; color: #166534; background: #f0fdf4; border: 1.5px solid #86efac; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; gap: 6px;" title="Open Online Staff Directory (Vercel PWA)">
+            <i class="fa-solid fa-globe"></i> Online Directory ↗
+          </a>
         </div>
 
-        <div class="panel-header">
+        <div class="panel-header" style="flex-wrap: wrap; gap: 8px;">
           <h2 id="dirPanelTitle"><i class="fa-solid fa-address-book"></i> Officers Directory</h2>
-          <button class="btn btn-primary" id="openAddModalBtn">
-            <i class="fa-solid fa-user-plus"></i> Add Officer
-          </button>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <a href="https://bandarawela-staff-directory.vercel.app/" target="_blank" rel="noopener noreferrer" class="btn btn-sm" id="btnOnlineStaffDir" title="Open Online Staff Directory Portal (Vercel)" style="text-decoration: none; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-weight: 600; padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 5px;">
+              <i class="fa-solid fa-globe"></i> Staff Directory <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 0.68rem;"></i>
+            </a>
+            <button class="btn btn-primary" id="openAddModalBtn">
+              <i class="fa-solid fa-user-plus"></i> Add Officer
+            </button>
+          </div>
         </div>
 
         <!-- Search Bar -->
@@ -333,6 +345,24 @@
       </section>
 
     </main>
+
+    <!-- System Footer -->
+    <footer class="app-system-footer">
+      <div class="footer-inner">
+        <div class="footer-info">
+          <span>🏛️ Divisional Secretariat Bandarawela</span>
+          <span class="footer-divider">•</span>
+          <span>National Productivity &amp; E-Governance System</span>
+          <span class="footer-divider">•</span>
+          <a href="https://bandarawela-staff-directory.vercel.app/" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+            <i class="fa-solid fa-users"></i> Staff Directory <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 0.68rem;"></i>
+          </a>
+        </div>
+        <div class="footer-credit">
+          <i class="fa-solid fa-laptop-code"></i> Created by IT Unit BW DS
+        </div>
+      </div>
+    </footer>
   </div>
 
   <!-- Add / Edit Officer Modal -->
@@ -437,6 +467,14 @@
         <button type="button" class="btn btn-primary btn-lg" id="loginSubmitBtn">
           <i class="fa-solid fa-shield-halved"></i> Access Dispatcher
         </button>
+        <div class="login-credits" style="margin-top: 18px; padding-top: 14px; border-top: 1px solid #e2e8f0; font-size: 0.82rem; color: #64748b; font-weight: 600; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-laptop-code" style="color: #2563eb;"></i> Created by IT Unit BW DS
+          </div>
+          <a href="https://bandarawela-staff-directory.vercel.app/" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: none; font-size: 0.78rem; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+            <i class="fa-solid fa-users"></i> Staff Directory Portal <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 0.65rem;"></i>
+          </a>
+        </div>
       </form>
     </div>
   </div>
