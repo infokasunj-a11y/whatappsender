@@ -68,6 +68,37 @@ document.addEventListener('DOMContentLoaded', () => {
   const dsAlertToggle = document.getElementById('dsAlertToggle');
   const btnSaveDsAlertSettings = document.getElementById('btnSaveDsAlertSettings');
 
+  // Visual Signature Positioning & Document Preview Elements
+  const signaturePositionModal = document.getElementById('signaturePositionModal');
+  const closeSigPosModalBtn = document.getElementById('closeSigPosModalBtn');
+  const cancelSigPosBtn = document.getElementById('cancelSigPosBtn');
+  const confirmSigPosAndApproveBtn = document.getElementById('confirmSigPosAndApproveBtn');
+  const btnPosPresetLeft = document.getElementById('btnPosPresetLeft');
+  const btnPosPresetCenter = document.getElementById('btnPosPresetCenter');
+  const btnPosPresetRight = document.getElementById('btnPosPresetRight');
+  const btnResetSigDefault = document.getElementById('btnResetSigDefault');
+  const btnNudgeUp = document.getElementById('btnNudgeUp');
+  const btnNudgeDown = document.getElementById('btnNudgeDown');
+  const btnNudgeLeft = document.getElementById('btnNudgeLeft');
+  const btnNudgeRight = document.getElementById('btnNudgeRight');
+  const coordBadge = document.getElementById('coordBadge');
+  const sigDocViewport = document.getElementById('sigDocViewport');
+  const sigPageWrapper = document.getElementById('sigPageWrapper');
+  const sigPdfCanvas = document.getElementById('sigPdfCanvas');
+  const sigImgFallback = document.getElementById('sigImgFallback');
+  const draggableStampBox = document.getElementById('draggableStampBox');
+  const sigLoadingOverlay = document.getElementById('sigLoadingOverlay');
+  const sigModalRefTag = document.getElementById('sigModalRefTag');
+  const dragPreviewRef = document.getElementById('dragPreviewRef');
+  const dragPreviewDate = document.getElementById('dragPreviewDate');
+
+  let activeSigApproval = null;
+  let currentSigPos = { xPercent: 12, yPercent: 70 };
+
+  if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+
   // Officers Modal Elements
   const officerModal = document.getElementById('officerModal');
   const closeModalBtn = document.getElementById('closeModalBtn');
@@ -279,6 +310,10 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       if (manageSectionsBtn) {
         manageSectionsBtn.style.display = isAdmin ? 'inline-flex' : 'none';
+      }
+      const openBackupBtn = document.getElementById('openBackupBtn');
+      if (openBackupBtn) {
+        openBackupBtn.style.display = isAdmin ? 'inline-flex' : 'none';
       }
       if (historyFilterGroup) {
         historyFilterGroup.style.display = isAdmin ? 'inline-flex' : 'none';
@@ -2011,8 +2046,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button type="button" class="btn btn-sm btn-danger btn-reject-approval" data-id="${item.id}" data-ref="${item.verificationCode}" style="padding: 6px 14px; font-size: 0.82rem; font-weight: 600;">
                   <i class="fa-solid fa-xmark"></i> සංශෝධන දන්වන්න (Reject)
                 </button>
+                <button type="button" class="btn btn-sm btn-primary btn-preview-pos-approval" data-id="${item.id}" style="padding: 6px 14px; font-size: 0.82rem; font-weight: 600; background: #2563eb; border-color: #1d4ed8; color: #fff; box-shadow: 0 2px 4px rgba(37,99,235,0.25);">
+                  <i class="fa-solid fa-arrows-up-down-left-right"></i> පෙරදසුන සහ අත්සන පිහිටුවන්න (Preview & Sign)
+                </button>
                 <button type="button" class="btn btn-sm btn-success btn-approve-approval" data-id="${item.id}" data-ref="${item.verificationCode}" data-has-recipient="${itemHasRecipient ? 'true' : 'false'}" style="padding: 6px 18px; font-size: 0.82rem; font-weight: 700; background: #16a34a; border-color: #15803d; box-shadow: 0 2px 4px rgba(22,163,74,0.25);">
-                  <i class="fa-solid fa-signature"></i> ${itemHasRecipient ? 'අනුමත කර WhatsApp යවන්න' : 'අනුමත කර E-Sign කරන්න (Internal)'}
+                  <i class="fa-solid fa-signature"></i> ${itemHasRecipient ? 'ක්ෂණික අනුමැතිය (Auto Sign)' : 'ක්ෂණික අනුමැතිය (Auto Sign)'}
                 </button>
               </div>
             `;
@@ -2058,7 +2096,18 @@ document.addEventListener('DOMContentLoaded', () => {
         approvalsListContainer.appendChild(card);
       });
 
-      // Hook up Approve buttons
+      // Hook up Preview & Position E-Sign buttons
+      approvalsListContainer.querySelectorAll('.btn-preview-pos-approval').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.getAttribute('data-id');
+          const targetItem = items.find(x => x.id === id);
+          if (targetItem) {
+            openSignaturePositionModal(targetItem);
+          }
+        });
+      });
+
+      // Hook up Approve buttons (1-click Auto E-sign fallback)
       approvalsListContainer.querySelectorAll('.btn-approve-approval').forEach(btn => {
         btn.addEventListener('click', () => {
           const id = btn.getAttribute('data-id');
@@ -2099,7 +2148,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  async function executeApproveAndSign(id, ref, hasRecipient) {
+  async function executeApproveAndSign(id, ref, hasRecipient, customPos = null) {
     if (hasRecipient && !isWhatsAppReady) {
       showToast('WhatsApp is not connected! Please scan QR code first to dispatch.', 'error');
       return;
@@ -2116,7 +2165,14 @@ document.addEventListener('DOMContentLoaded', () => {
     showToast(hasRecipient ? 'Stamping E-Signature & dispatching WhatsApp message...' : 'Stamping E-Signature onto internal document...', 'info');
 
     try {
-      const res = await authFetch(`/api/approvals/${id}/approve`, { method: 'POST' });
+      const options = {
+        method: 'POST'
+      };
+      if (customPos) {
+        options.headers = { 'Content-Type': 'application/json' };
+        options.body = JSON.stringify({ customPos });
+      }
+      const res = await authFetch(`/api/approvals/${id}/approve`, options);
       const data = await res.json();
 
       if (res.ok && data.success) {
@@ -2131,6 +2187,267 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Approve error:', err);
       showToast('Network error while approving document.', 'error');
     }
+  }
+
+  // --- Visual Signature Positioning & Interactive Canvas Logic ---
+  function applySigPosition(xPercent, yPercent) {
+    currentSigPos.xPercent = Math.max(0, Math.min(80, Math.round(xPercent * 10) / 10));
+    currentSigPos.yPercent = Math.max(0, Math.min(88, Math.round(yPercent * 10) / 10));
+
+    if (draggableStampBox) {
+      draggableStampBox.style.left = `${currentSigPos.xPercent}%`;
+      draggableStampBox.style.top = `${currentSigPos.yPercent}%`;
+    }
+    if (coordBadge) {
+      coordBadge.textContent = `X: ${currentSigPos.xPercent}% | Y: ${currentSigPos.yPercent}%`;
+    }
+  }
+
+  async function openSignaturePositionModal(item) {
+    if (!signaturePositionModal) return;
+    activeSigApproval = item;
+
+    // Reset coordinates to default Left 1" (approx 12% x, 70% y from top)
+    applySigPosition(12, 70);
+
+    if (sigModalRefTag) {
+      const sec = item.requestedBy ? (item.requestedBy.name || item.requestedBy.username) : 'Section';
+      sigModalRefTag.textContent = `Ref: ${item.verificationCode} • ${sec} • Last Page`;
+    }
+    if (dragPreviewRef) {
+      dragPreviewRef.textContent = `Verified Digital Approval | Ref: ${item.verificationCode}`;
+    }
+    if (dragPreviewDate) {
+      dragPreviewDate.textContent = `Date: ${new Date().toLocaleDateString('en-GB')}`;
+    }
+
+    signaturePositionModal.classList.add('active');
+
+    // Render page
+    await renderDocumentPreview(item);
+  }
+
+  async function renderDocumentPreview(item) {
+    if (sigLoadingOverlay) sigLoadingOverlay.style.display = 'flex';
+    if (sigPdfCanvas) sigPdfCanvas.style.display = 'none';
+    if (sigImgFallback) sigImgFallback.style.display = 'none';
+
+    const pdfAtt = item.attachments && item.attachments.find(a => 
+      (a.mimetype === 'application/pdf') || (a.filename && a.filename.toLowerCase().endsWith('.pdf'))
+    );
+    const imgAtt = item.attachments && item.attachments.find(a => 
+      a.mimetype && a.mimetype.startsWith('image/')
+    );
+
+    try {
+      if (pdfAtt && window.pdfjsLib) {
+        if (sigPdfCanvas) sigPdfCanvas.style.display = 'block';
+        const pdfUrl = `/uploads/${pdfAtt.filename}`;
+        const loadingTask = pdfjsLib.getDocument(pdfUrl);
+        const pdfDoc = await loadingTask.promise;
+        const lastPageNum = pdfDoc.numPages; // always stamp on the last page!
+        const page = await pdfDoc.getPage(lastPageNum);
+
+        const desiredWidth = (sigPageWrapper && sigPageWrapper.clientWidth) ? sigPageWrapper.clientWidth : 560;
+        const unscaledViewport = page.getViewport({ scale: 1.0 });
+        const scale = (desiredWidth / unscaledViewport.width) * 1.5; // High-DPI crisp scale
+        const viewport = page.getViewport({ scale });
+
+        sigPdfCanvas.width = viewport.width;
+        sigPdfCanvas.height = viewport.height;
+        sigPdfCanvas.style.width = '100%';
+        sigPdfCanvas.style.height = 'auto';
+
+        const renderContext = {
+          canvasContext: sigPdfCanvas.getContext('2d'),
+          viewport: viewport
+        };
+        await page.render(renderContext).promise;
+        if (sigModalRefTag) {
+          const sec = item.requestedBy ? (item.requestedBy.name || item.requestedBy.username) : 'Section';
+          sigModalRefTag.textContent = `Ref: ${item.verificationCode} • ${sec} • Page ${lastPageNum} of ${pdfDoc.numPages}`;
+        }
+      } else if (imgAtt && sigImgFallback) {
+        sigImgFallback.src = `/uploads/${imgAtt.filename}`;
+        sigImgFallback.style.display = 'block';
+        if (sigModalRefTag) {
+          const sec = item.requestedBy ? (item.requestedBy.name || item.requestedBy.username) : 'Section';
+          sigModalRefTag.textContent = `Ref: ${item.verificationCode} • ${sec} • Image Attachment`;
+        }
+      } else {
+        // Document has no attachments (e.g. text only message)
+        if (sigPdfCanvas) {
+          sigPdfCanvas.style.display = 'block';
+          sigPdfCanvas.width = 1120;
+          sigPdfCanvas.height = 1580;
+          sigPdfCanvas.style.width = '100%';
+          sigPdfCanvas.style.height = 'auto';
+          const ctx = sigPdfCanvas.getContext('2d');
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, 1120, 1580);
+
+          ctx.fillStyle = '#0f172a';
+          ctx.font = 'bold 30px sans-serif';
+          ctx.fillText('Divisional Secretariat - Bandarawela', 60, 100);
+
+          ctx.font = '18px sans-serif';
+          ctx.fillStyle = '#64748b';
+          ctx.fillText(`Official Approval Document | Ref: ${item.verificationCode}`, 60, 138);
+          ctx.fillText(`Date: ${new Date(item.createdAt).toLocaleDateString('en-GB')}`, 60, 168);
+
+          ctx.strokeStyle = '#e2e8f0';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(60, 195);
+          ctx.lineTo(1060, 195);
+          ctx.stroke();
+
+          ctx.fillStyle = '#334155';
+          ctx.font = '20px sans-serif';
+          const lines = (item.message || '').split('\n').slice(0, 30);
+          let curY = 240;
+          for (const line of lines) {
+            ctx.fillText(line.slice(0, 75), 60, curY);
+            curY += 34;
+          }
+        }
+        if (sigModalRefTag) {
+          const sec = item.requestedBy ? (item.requestedBy.name || item.requestedBy.username) : 'Section';
+          sigModalRefTag.textContent = `Ref: ${item.verificationCode} • ${sec} • Official Text Document`;
+        }
+      }
+    } catch (err) {
+      console.error('Error rendering preview:', err);
+      showToast('Failed to load document preview. You can still position the stamp.', 'error');
+    } finally {
+      if (sigLoadingOverlay) sigLoadingOverlay.style.display = 'none';
+    }
+  }
+
+  // Presets
+  if (btnPosPresetLeft) {
+    btnPosPresetLeft.addEventListener('click', () => applySigPosition(10, 72));
+  }
+  if (btnPosPresetCenter) {
+    btnPosPresetCenter.addEventListener('click', () => applySigPosition(38, 72));
+  }
+  if (btnPosPresetRight) {
+    btnPosPresetRight.addEventListener('click', () => applySigPosition(66, 72));
+  }
+  if (btnResetSigDefault) {
+    btnResetSigDefault.addEventListener('click', () => applySigPosition(12, 70));
+  }
+
+  // Nudge Buttons
+  if (btnNudgeUp) {
+    btnNudgeUp.addEventListener('click', () => applySigPosition(currentSigPos.xPercent, currentSigPos.yPercent - 2));
+  }
+  if (btnNudgeDown) {
+    btnNudgeDown.addEventListener('click', () => applySigPosition(currentSigPos.xPercent, currentSigPos.yPercent + 2));
+  }
+  if (btnNudgeLeft) {
+    btnNudgeLeft.addEventListener('click', () => applySigPosition(currentSigPos.xPercent - 2, currentSigPos.yPercent));
+  }
+  if (btnNudgeRight) {
+    btnNudgeRight.addEventListener('click', () => applySigPosition(currentSigPos.xPercent + 2, currentSigPos.yPercent));
+  }
+
+  // Close & Cancel Buttons
+  if (closeSigPosModalBtn) {
+    closeSigPosModalBtn.addEventListener('click', () => {
+      if (signaturePositionModal) signaturePositionModal.classList.remove('active');
+    });
+  }
+  if (cancelSigPosBtn) {
+    cancelSigPosBtn.addEventListener('click', () => {
+      if (signaturePositionModal) signaturePositionModal.classList.remove('active');
+    });
+  }
+
+  // Confirm Signature Position & Approve
+  if (confirmSigPosAndApproveBtn) {
+    confirmSigPosAndApproveBtn.addEventListener('click', async () => {
+      if (!activeSigApproval) return;
+      const target = activeSigApproval;
+      const hasRecipient = (target.isBulk && Array.isArray(target.recipients) && target.recipients.length > 0) || (target.recipient && target.recipient.phone);
+
+      confirmSigPosAndApproveBtn.disabled = true;
+      confirmSigPosAndApproveBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> E-Signing...`;
+
+      try {
+        if (signaturePositionModal) signaturePositionModal.classList.remove('active');
+        await executeApproveAndSign(target.id, target.verificationCode, hasRecipient, currentSigPos);
+      } finally {
+        confirmSigPosAndApproveBtn.disabled = false;
+        confirmSigPosAndApproveBtn.innerHTML = `<i class="fa-solid fa-signature"></i> තහවුරු කර E-Sign කරන්න (Confirm & Sign)`;
+      }
+    });
+  }
+
+  // Drag and Drop (Mouse + Touch)
+  if (draggableStampBox && sigPageWrapper) {
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+    let initialLeftPx = 0;
+    let initialTopPx = 0;
+
+    const startDrag = (e) => {
+      e.preventDefault();
+      isDragging = true;
+      draggableStampBox.style.cursor = 'grabbing';
+
+      const point = e.touches ? e.touches[0] : e;
+      startX = point.clientX;
+      startY = point.clientY;
+
+      initialLeftPx = draggableStampBox.offsetLeft;
+      initialTopPx = draggableStampBox.offsetTop;
+
+      document.addEventListener('mousemove', moveDrag);
+      document.addEventListener('mouseup', stopDrag);
+      document.addEventListener('touchmove', moveDrag, { passive: false });
+      document.addEventListener('touchend', stopDrag);
+    };
+
+    const moveDrag = (e) => {
+      if (!isDragging) return;
+      if (e.cancelable) e.preventDefault();
+
+      const point = e.touches ? e.touches[0] : e;
+      const deltaX = point.clientX - startX;
+      const deltaY = point.clientY - startY;
+
+      const parentW = sigPageWrapper.clientWidth || 560;
+      const parentH = sigPageWrapper.clientHeight || 700;
+      const stampW = draggableStampBox.offsetWidth || 155;
+      const stampH = draggableStampBox.offsetHeight || 80;
+
+      let newLeft = initialLeftPx + deltaX;
+      let newTop = initialTopPx + deltaY;
+
+      newLeft = Math.max(0, Math.min(parentW - stampW, newLeft));
+      newTop = Math.max(0, Math.min(parentH - stampH, newTop));
+
+      const xPct = parentW > 0 ? (newLeft / parentW) * 100 : 0;
+      const yPct = parentH > 0 ? (newTop / parentH) * 100 : 0;
+
+      applySigPosition(xPct, yPct);
+    };
+
+    const stopDrag = () => {
+      if (!isDragging) return;
+      isDragging = false;
+      draggableStampBox.style.cursor = 'grab';
+
+      document.removeEventListener('mousemove', moveDrag);
+      document.removeEventListener('mouseup', stopDrag);
+      document.removeEventListener('touchmove', moveDrag);
+      document.removeEventListener('touchend', stopDrag);
+    };
+
+    draggableStampBox.addEventListener('mousedown', startDrag);
+    draggableStampBox.addEventListener('touchstart', startDrag, { passive: false });
   }
 
   // Reject remarks modal confirm
@@ -2237,6 +2554,213 @@ document.addEventListener('DOMContentLoaded', () => {
         btnSaveDsAlertSettings.innerHTML = `<i class="fa-solid fa-floppy-disk"></i> Save`;
       }
     });
+  }
+
+  // ===============================================
+  // --- 8. System Backup & Restore Hub Logic ---
+  // ===============================================
+  const openBackupBtn = document.getElementById('openBackupBtn');
+  const backupModal = document.getElementById('backupModal');
+  const closeBackupModalBtn = document.getElementById('closeBackupModalBtn');
+  const closeBackupModalBtn2 = document.getElementById('closeBackupModalBtn2');
+  const btnDownloadBackupFile = document.getElementById('btnDownloadBackupFile');
+  const backupUploadInput = document.getElementById('backupUploadInput');
+  const btnUploadRestoreFile = document.getElementById('btnUploadRestoreFile');
+  const btnCreateSnapshotNow = document.getElementById('btnCreateSnapshotNow');
+  const localSnapshotsList = document.getElementById('localSnapshotsList');
+
+  if (openBackupBtn) {
+    openBackupBtn.addEventListener('click', () => {
+      if (backupModal) {
+        backupModal.classList.add('active');
+        loadLocalSnapshots();
+      }
+    });
+  }
+
+  if (closeBackupModalBtn) closeBackupModalBtn.addEventListener('click', () => backupModal.classList.remove('active'));
+  if (closeBackupModalBtn2) closeBackupModalBtn2.addEventListener('click', () => backupModal.classList.remove('active'));
+
+  // 1. Download Backup File
+  if (btnDownloadBackupFile) {
+    btnDownloadBackupFile.addEventListener('click', async () => {
+      btnDownloadBackupFile.disabled = true;
+      btnDownloadBackupFile.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Preparing Backup...`;
+      try {
+        const res = await authFetch('/api/backup/download');
+        if (!res.ok) throw new Error('Failed to generate backup.');
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ds_bandarawela_backup_${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        showToast('සම්පූර්ණ පද්ධති Backup එක සාර්ථකව Download කරන ලදී!', 'success');
+      } catch (err) {
+        console.error('Backup download error:', err);
+        showToast('Backup එක බාගත කිරීම අසාර්ථක විය: ' + err.message, 'error');
+      } finally {
+        btnDownloadBackupFile.disabled = false;
+        btnDownloadBackupFile.innerHTML = `<i class="fa-solid fa-download"></i> Download Backup (.json)`;
+      }
+    });
+  }
+
+  // 2. Upload & Restore Backup File
+  if (btnUploadRestoreFile) {
+    btnUploadRestoreFile.addEventListener('click', async () => {
+      if (!backupUploadInput || !backupUploadInput.files || backupUploadInput.files.length === 0) {
+        showToast('කරුණාකර කලින් ලබාගත් .json Backup ගොනුවක් තෝරන්න.', 'error');
+        return;
+      }
+
+      const file = backupUploadInput.files[0];
+      if (!confirm(`ඔබට "${file.name}" Backup ගොනුවෙන් පද්ධතිය Restore කිරීමට අවශ්‍ය බව තහවුරු කරන්නද?\n(පවතින දත්ත ස්වයංක්‍රීයව Safety Snapshot එකක් ලෙස සුරැකේ)`)) {
+        return;
+      }
+
+      btnUploadRestoreFile.disabled = true;
+      btnUploadRestoreFile.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Restoring Data...`;
+
+      try {
+        const formData = new FormData();
+        formData.append('backupFile', file);
+
+        const res = await authFetch('/api/backup/restore-file', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          showToast(data.message || 'දත්ත සාර්ථකව ප්‍රතිස්ථාපනය කරන ලදී!', 'success');
+          backupUploadInput.value = '';
+          loadDirectory();
+          loadHistory();
+          updateApprovalsBadge();
+          loadLocalSnapshots();
+        } else {
+          showToast(data.error || 'Restore කිරීම අසාර්ථක විය.', 'error');
+        }
+      } catch (err) {
+        console.error('Restore error:', err);
+        showToast('දත්ත ප්‍රතිස්ථාපනයේදී දෝෂයක් ඇති විය.', 'error');
+      } finally {
+        btnUploadRestoreFile.disabled = false;
+        btnUploadRestoreFile.innerHTML = `<i class="fa-solid fa-rotate-left"></i> Restore Data`;
+      }
+    });
+  }
+
+  // 3. Create Manual Snapshot Now
+  if (btnCreateSnapshotNow) {
+    btnCreateSnapshotNow.addEventListener('click', async () => {
+      btnCreateSnapshotNow.disabled = true;
+      btnCreateSnapshotNow.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> සුරකිමින්...`;
+      try {
+        const res = await authFetch('/api/backup/snapshot', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast('නව Safety Snapshot එකක් සාර්ථකව සුරකින ලදී!', 'success');
+          loadLocalSnapshots();
+        } else {
+          showToast(data.error || 'Snapshot එක සෑදීම අසාර්ථක විය.', 'error');
+        }
+      } catch (e) {
+        showToast('Snapshot සෑදීම අසාර්ථක විය.', 'error');
+      } finally {
+        btnCreateSnapshotNow.disabled = false;
+        btnCreateSnapshotNow.innerHTML = `<i class="fa-solid fa-camera"></i> Snapshot එකක් ගන්න`;
+      }
+    });
+  }
+
+  // 4. Load Local Snapshots
+  async function loadLocalSnapshots() {
+    if (!localSnapshotsList || !authToken) return;
+    localSnapshotsList.innerHTML = `<div style="text-align: center; color: #64748b; font-size: 0.8rem; padding: 10px;"><i class="fa-solid fa-spinner fa-spin"></i> පූරණය වෙමින් පවතී...</div>`;
+
+    try {
+      const res = await authFetch('/api/backup/snapshots');
+      if (!res.ok) throw new Error('Failed to load snapshots.');
+      const list = await res.json();
+
+      if (!Array.isArray(list) || list.length === 0) {
+        localSnapshotsList.innerHTML = `<div style="text-align: center; color: #94a3b8; font-size: 0.8rem; padding: 10px;">ස්වයංක්‍රීය Snapshots කිසිවක් හමු නොවීය.</div>`;
+        return;
+      }
+
+      localSnapshotsList.innerHTML = list.map(item => {
+        const formattedDate = new Date(item.createdAt).toLocaleString('en-GB');
+        const sizeKb = (item.size / 1024).toFixed(1) + ' KB';
+        let badgeType = 'Auto';
+        let badgeBg = '#f1f5f9';
+        let badgeColor = '#475569';
+        if (item.filename.includes('_startup_')) {
+          badgeType = 'Startup'; badgeBg = '#dbeafe'; badgeColor = '#1d4ed8';
+        } else if (item.filename.includes('_manual_')) {
+          badgeType = 'Manual'; badgeBg = '#dcfce7'; badgeColor = '#15803d';
+        } else if (item.filename.includes('_before_restore')) {
+          badgeType = 'Safety'; badgeBg = '#fee2e2'; badgeColor = '#b91c1c';
+        }
+
+        return `
+          <div style="display: flex; justify-content: space-between; align-items: center; background: #ffffff; border: 1px solid #e2e8f0; padding: 7px 10px; border-radius: 6px; font-size: 0.78rem;">
+            <div style="display: flex; align-items: center; gap: 8px; min-width: 0;">
+              <span style="background: ${badgeBg}; color: ${badgeColor}; padding: 1px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: 700;">${badgeType}</span>
+              <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px;" title="${item.filename}">
+                <strong>${item.filename}</strong>
+                <div style="font-size: 0.72rem; color: #64748b;">${formattedDate} • ${sizeKb}</div>
+              </div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-primary btn-restore-snap" data-filename="${item.filename}" style="padding: 2px 8px; font-size: 0.72rem; font-weight: 600; white-space: nowrap;">
+              <i class="fa-solid fa-rotate-left"></i> Restore
+            </button>
+          </div>
+        `;
+      }).join('');
+
+      localSnapshotsList.querySelectorAll('.btn-restore-snap').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const filename = btn.getAttribute('data-filename');
+          if (!confirm(`මෙම Snapshot එකෙන් (${filename}) දත්ත නැවත ලබාගැනීමට (Restore) අවශ්‍ය බව තහවුරු කරන්නද?\n(පවතින දත්ත Safety Snapshot එකක් ලෙස සුරැකේ)`)) {
+            return;
+          }
+
+          btn.disabled = true;
+          btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
+          try {
+            const res = await authFetch('/api/backup/restore-snapshot', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ filename })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+              showToast(data.message || 'Snapshot restored successfully!', 'success');
+              loadDirectory();
+              loadHistory();
+              updateApprovalsBadge();
+              loadLocalSnapshots();
+            } else {
+              showToast(data.error || 'Restore failed.', 'error');
+            }
+          } catch (e) {
+            showToast('Snapshot restore error.', 'error');
+          } finally {
+            btn.disabled = false;
+            btn.innerHTML = `<i class="fa-solid fa-rotate-left"></i> Restore`;
+          }
+        });
+      });
+
+    } catch (e) {
+      console.error('Error loading snapshots:', e);
+      localSnapshotsList.innerHTML = `<div style="color: #ef4444; font-size: 0.78rem; text-align: center;">Snapshots පූරණය කිරීම අසාර්ථක විය.</div>`;
+    }
   }
 
   // Initialize Session Check

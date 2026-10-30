@@ -8,6 +8,8 @@
   <!-- FontAwesome & Google Fonts -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- PDF.js for Visual Document Preview & Interactive Signature Stamping -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
   <div class="app-container">
@@ -32,6 +34,8 @@
             <i class="fa-solid fa-file-circle-check"></i> My Approvals <span id="navMyPendingBadge" style="display: none; background: #f59e0b; color: white; border-radius: 10px; padding: 1px 6px; font-size: 0.72rem; font-weight: 700; margin-left: 2px;">0</span>
           </button>
           <button class="btn btn-sm btn-icon" id="manageSectionsBtn" title="Manage Section Accounts (Admin Only)" style="display: none; margin-left: 4px;"><i class="fa-solid fa-users-gear"></i> Sections</button>
+          <button class="btn btn-sm btn-icon" id="openBackupBtn" title="System Backup & Restore (Admin Only)" style="display: none; margin-left: 4px; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; font-weight: 600;"><i class="fa-solid fa-cloud-arrow-down"></i> Backup</button>
+          <a href="/verify" target="_blank" class="btn btn-sm btn-icon" id="navVerifyBtn" title="Document Verification Portal" style="margin-left: 4px; text-decoration: none; background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;"><i class="fa-solid fa-shield-check"></i> Verify Portal</a>
           <button class="btn btn-sm btn-icon" id="openChangePassBtn" title="Change Password"><i class="fa-solid fa-key"></i></button>
           <button class="btn btn-sm btn-danger" id="userLogoutBtn" title="Logout / Switch Account" style="margin-left: 6px;">
             <i class="fa-solid fa-right-from-bracket"></i> Logout
@@ -667,9 +671,194 @@
     </div>
   </div>
 
+  <!-- Modal: Interactive Signature Positioning & Live Preview Modal -->
+  <div class="modal" id="signaturePositionModal">
+    <div class="modal-content" style="max-width: 920px; width: 95%; max-height: 94vh; display: flex; flex-direction: column; padding: 0; overflow: hidden; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
+      
+      <!-- Modal Header -->
+      <div class="modal-header" style="background: #0f172a; color: #fff; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div style="background: #2563eb; color: #fff; width: 34px; height: 34px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 1rem;">
+            <i class="fa-solid fa-arrows-up-down-left-right"></i>
+          </div>
+          <div>
+            <h3 style="margin: 0; font-size: 1rem; color: #fff;">අත්සන සහ මුද්‍රාව ස්ථානගත කිරීම (Position E-Signature & Seal)</h3>
+            <span style="font-size: 0.73rem; color: #94a3b8;" id="sigModalRefTag">Ref: BDS-2026-APP-xxxx • Last Page</span>
+          </div>
+        </div>
+        <button type="button" class="btn-close" id="closeSigPosModalBtn" style="color: #cbd5e1; background: none; border: none; font-size: 1.2rem; cursor: pointer;"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <!-- Toolbar: Presets & Nudge Controls -->
+      <div style="background: #f1f5f9; border-bottom: 1px solid #cbd5e1; padding: 8px 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+          <span style="font-size: 0.76rem; font-weight: 700; color: #475569; margin-right: 4px;">
+            <i class="fa-solid fa-wand-magic-sparkles" style="color: #2563eb;"></i> Presets:
+          </span>
+          <button type="button" id="btnPosPresetLeft" class="btn btn-sm" style="background: #fff; border: 1px solid #cbd5e1; color: #1e293b; font-size: 0.74rem; font-weight: 600; padding: 3px 8px; border-radius: 5px; cursor: pointer;">
+            <i class="fa-solid fa-arrow-down-left" style="color: #2563eb;"></i> පහළ වම්පස (Left)
+          </button>
+          <button type="button" id="btnPosPresetCenter" class="btn btn-sm" style="background: #fff; border: 1px solid #cbd5e1; color: #1e293b; font-size: 0.74rem; font-weight: 600; padding: 3px 8px; border-radius: 5px; cursor: pointer;">
+            <i class="fa-solid fa-arrows-to-dot" style="color: #2563eb;"></i> පහළ මැද (Center)
+          </button>
+          <button type="button" id="btnPosPresetRight" class="btn btn-sm" style="background: #fff; border: 1px solid #cbd5e1; color: #1e293b; font-size: 0.74rem; font-weight: 600; padding: 3px 8px; border-radius: 5px; cursor: pointer;">
+            <i class="fa-solid fa-arrow-down-right" style="color: #2563eb;"></i> පහළ දකුණ (Right)
+          </button>
+          <button type="button" id="btnResetSigDefault" class="btn btn-sm" style="background: #fff; border: 1px solid #cbd5e1; color: #dc2626; font-size: 0.74rem; font-weight: 600; padding: 3px 8px; border-radius: 5px; cursor: pointer;">
+            <i class="fa-solid fa-rotate-left"></i> Default (Left 1")
+          </button>
+        </div>
+
+        <!-- Nudge Arrows & Coordinate Indicator -->
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <span style="font-size: 0.74rem; font-weight: 600; color: #64748b; margin-right: 4px;">Nudge:</span>
+          <div style="display: inline-flex; border: 1px solid #cbd5e1; border-radius: 5px; overflow: hidden; background: #fff;">
+            <button type="button" id="btnNudgeUp" style="padding: 3px 8px; border: none; background: none; cursor: pointer; color: #334155; font-size: 0.72rem;" title="උඩට (Up)"><i class="fa-solid fa-arrow-up"></i></button>
+            <button type="button" id="btnNudgeDown" style="padding: 3px 8px; border: none; border-left: 1px solid #cbd5e1; background: none; cursor: pointer; color: #334155; font-size: 0.72rem;" title="පහළට (Down)"><i class="fa-solid fa-arrow-down"></i></button>
+            <button type="button" id="btnNudgeLeft" style="padding: 3px 8px; border: none; border-left: 1px solid #cbd5e1; background: none; cursor: pointer; color: #334155; font-size: 0.72rem;" title="වමට (Left)"><i class="fa-solid fa-arrow-left"></i></button>
+            <button type="button" id="btnNudgeRight" style="padding: 3px 8px; border: none; border-left: 1px solid #cbd5e1; background: none; cursor: pointer; color: #334155; font-size: 0.72rem;" title="දකුණට (Right)"><i class="fa-solid fa-arrow-right"></i></button>
+          </div>
+          <span id="coordBadge" style="font-family: monospace; font-size: 0.72rem; color: #1e40af; background: #dbeafe; padding: 2px 6px; border-radius: 4px; font-weight: 700;">X: 12% | Y: 70%</span>
+        </div>
+      </div>
+
+      <!-- Scrollable Canvas Viewport -->
+      <div id="sigDocViewport" style="flex: 1; overflow: auto; background: #475569; padding: 20px; display: flex; justify-content: center; align-items: flex-start; min-height: 380px; position: relative;">
+        
+        <!-- Loading Spinner -->
+        <div id="sigLoadingOverlay" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15,23,42,0.6); display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; z-index: 20;">
+          <i class="fa-solid fa-spinner fa-spin" style="font-size: 2.2rem; color: #60a5fa; margin-bottom: 10px;"></i>
+          <span style="font-weight: 600; font-size: 0.95rem;">ලේඛනයේ අවසන් පිටුව පූරණය වෙමින් පවතී...</span>
+        </div>
+
+        <!-- Document Sheet Wrapper -->
+        <div id="sigPageWrapper" style="position: relative; background: #ffffff; box-shadow: 0 8px 24px rgba(0,0,0,0.35); border-radius: 4px; overflow: hidden; width: 560px; max-width: 100%;">
+          <canvas id="sigPdfCanvas" style="display: block; width: 100%; height: auto;"></canvas>
+          <img id="sigImgFallback" style="display: none; width: 100%; height: auto;" alt="Document page">
+
+          <!-- Draggable Stamp Box -->
+          <div id="draggableStampBox" style="position: absolute; left: 12%; top: 70%; width: 180px; cursor: grab; user-select: none; border: 2px dashed #2563eb; background: rgba(255, 255, 255, 0.95); border-radius: 6px; padding: 4px; box-shadow: 0 4px 15px rgba(37,99,235,0.3); z-index: 10; touch-action: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; padding: 0 2px;">
+              <span style="font-size: 0.65rem; font-weight: 700; color: #1e40af; background: #dbeafe; padding: 1px 4px; border-radius: 3px;">
+                <i class="fa-solid fa-stamp"></i> DS Signature & Seal
+              </span>
+              <span style="font-size: 0.6rem; color: #059669; font-weight: bold; background: #dcfce7; padding: 1px 4px; border-radius: 3px;">
+                <i class="fa-solid fa-qrcode"></i> QR Verify
+              </span>
+            </div>
+            <div style="display: flex; gap: 4px; align-items: center;">
+              <img src="/assets/ds_signature.jpg" alt="DS Signature" style="width: 124px; height: auto; pointer-events: none; border-radius: 2px; display: block;">
+              <div style="width: 42px; height: 42px; border: 1px solid #cbd5e1; border-radius: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #ffffff; text-align: center; padding: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                <i class="fa-solid fa-qrcode" style="font-size: 22px; color: #0f172a;"></i>
+                <span style="font-size: 5px; color: #2563eb; font-weight: 800; line-height: 1; margin-top: 2px;">VERIFY</span>
+              </div>
+            </div>
+            <div style="font-size: 5.5px; color: #1e3a8a; font-weight: bold; margin-top: 2px; line-height: 1.1;" id="dragPreviewRef">Verified Digital Approval | Ref: BDS-APP</div>
+            <div style="font-size: 5px; color: #64748b; line-height: 1.1;" id="dragPreviewDate">Date: 30/10/2026</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="modal-footer" style="background: #f8fafc; border-top: 1px solid #cbd5e1; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+        <small style="color: #475569; font-size: 0.77rem; display: flex; align-items: center; gap: 6px;">
+          <i class="fa-solid fa-circle-info" style="color: #2563eb;"></i> අත්සන Mouse හෝ Touch මඟින් ලිපියේ කැමති ස්ථානයකට <b>Drag කර තබන්න.</b>
+        </small>
+        <div style="display: flex; gap: 8px;">
+          <button type="button" class="btn btn-secondary" id="cancelSigPosBtn" style="padding: 7px 14px; font-size: 0.82rem;">Cancel</button>
+          <button type="button" class="btn btn-success" id="confirmSigPosAndApproveBtn" style="background: #16a34a; border-color: #15803d; font-weight: 700; font-size: 0.86rem; padding: 7px 20px; box-shadow: 0 2px 6px rgba(22,163,74,0.3);">
+            <i class="fa-solid fa-signature"></i> මෙතනට E-Sign කර අනුමත කරන්න (Confirm & Sign)
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Modal: System Backup & Restore Hub (Admin Only) -->
+  <div class="modal" id="backupModal">
+    <div class="modal-content" style="max-width: 680px; width: 95%;">
+      <div class="modal-header" style="background: #064e3b; color: #fff; border-radius: 8px 8px 0 0; padding: 14px 20px; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div style="background: #10b981; color: #fff; width: 34px; height: 34px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 1.1rem;">
+            <i class="fa-solid fa-database"></i>
+          </div>
+          <div>
+            <h3 style="margin: 0; font-size: 1.05rem; color: #fff;">දත්ත උපස්ථ සහ ප්‍රතිස්ථාපනය (Backup & Restore Hub)</h3>
+            <span style="font-size: 0.75rem; color: #a7f3d0;">Divisional Secretariat Bandarawela System Protection</span>
+          </div>
+        </div>
+        <button type="button" class="btn-close" id="closeBackupModalBtn" style="color: #a7f3d0; background: none; border: none; font-size: 1.2rem; cursor: pointer;"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <div class="modal-body" style="padding: 20px; display: flex; flex-direction: column; gap: 16px;">
+        
+        <!-- Card 1: Export / Download -->
+        <div style="border: 1px solid #bbf7d0; background: #f0fdf4; border-radius: 8px; padding: 14px 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div style="flex: 1; min-width: 250px;">
+              <strong style="color: #166534; font-size: 0.92rem; display: flex; align-items: center; gap: 6px;">
+                <i class="fa-solid fa-cloud-arrow-down"></i> 1. සම්පූර්ණ දත්ත උපස්ථය බාගත කරන්න (Download Backup)
+              </strong>
+              <p style="margin: 4px 0 0 0; font-size: 0.78rem; color: #15803d; line-height: 1.4;">
+                පද්ධතියේ ඇති සියලුම නිලධාරී තොරතුරු, ලිපිගොනු, අනුමැති වාර්තා සහ සැකසුම් සුරක්ෂිත JSON ගොනුවක් ලෙස ඔබගේ පරිගණකයට බාගත කර තබා ගන්න.
+              </p>
+            </div>
+            <button type="button" class="btn btn-success" id="btnDownloadBackupFile" style="background: #16a34a; font-weight: 700; padding: 8px 16px; font-size: 0.85rem; box-shadow: 0 2px 6px rgba(22,163,74,0.3);">
+              <i class="fa-solid fa-download"></i> Download Backup (.json)
+            </button>
+          </div>
+        </div>
+
+        <!-- Card 2: Import / Restore -->
+        <div style="border: 1px solid #bfdbfe; background: #eff6ff; border-radius: 8px; padding: 14px 16px;">
+          <strong style="color: #1e40af; font-size: 0.92rem; display: flex; align-items: center; gap: 6px;">
+            <i class="fa-solid fa-cloud-arrow-up"></i> 2. Backup ගොනුවකින් යථා තත්ත්වයට පත් කරන්න (Restore Backup)
+          </strong>
+          <p style="margin: 4px 0 10px 0; font-size: 0.78rem; color: #1d4ed8; line-height: 1.4;">
+            කලින් බාගත කළ Backup ගොනුවක් (.json) තෝරා පද්ධතිය නැවත යථා තත්ත්වයට පත් කරන්න.
+          </p>
+          <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+            <input type="file" id="backupUploadInput" accept=".json,application/json" style="flex: 1; min-width: 200px; font-size: 0.8rem; background: #fff; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px;">
+            <button type="button" class="btn btn-primary" id="btnUploadRestoreFile" style="padding: 7px 16px; font-size: 0.85rem; font-weight: 700;">
+              <i class="fa-solid fa-rotate-left"></i> Restore Data
+            </button>
+          </div>
+          <small style="color: #64748b; font-size: 0.72rem; display: block; margin-top: 6px;">
+            <i class="fa-solid fa-shield-halved" style="color: #2563eb;"></i> Restore කිරීමට පෙර දැනට පවතින දත්ත ස්වයංක්‍රීයව Safety Snapshot එකක් ලෙස සුරැකේ.
+          </small>
+        </div>
+
+        <!-- Card 3: Local Safety Snapshots -->
+        <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; background: #f8fafc;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <div>
+              <strong style="font-size: 0.88rem; color: #334155; display: flex; align-items: center; gap: 6px;">
+                <i class="fa-solid fa-clock-rotate-left"></i> 3. ස්වයංක්‍රීය සහ ක්ෂණික Snapshots (Local Recovery)
+              </strong>
+              <span style="font-size: 0.74rem; color: #64748b;">පද්ධතිය මඟින් ස්වයංක්‍රීයව සාදන ලද පෙර උපස්ථ ලැයිස්තුව</span>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnCreateSnapshotNow" style="padding: 4px 10px; font-size: 0.76rem; font-weight: 600;">
+              <i class="fa-solid fa-camera"></i> Snapshot එකක් ගන්න
+            </button>
+          </div>
+
+          <div id="localSnapshotsList" style="max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;">
+            <div style="text-align: center; color: #94a3b8; font-size: 0.8rem; padding: 15px;">පූරණය වෙමින් පවතී...</div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="modal-footer" style="padding: 10px 20px; background: #f1f5f9; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end;">
+        <button type="button" class="btn btn-secondary" id="closeBackupModalBtn2" style="padding: 6px 14px; font-size: 0.82rem;">වසන්න (Close)</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification -->
   <div class="toast" id="toast"></div>
 
-  <script src="app.js?v=3.1"></script>
+  <script src="app.js?v=3.3"></script>
 </body>
 </html>
